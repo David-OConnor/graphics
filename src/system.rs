@@ -220,7 +220,6 @@ where
 /// `event_handler` allows application code to handle device events, such as user input.
 /// `gui_handler` is where the EGUI code is written to describe the UI.
 pub fn run<T: 'static, FRender, FEvent, FGui>(
-
     user_state: T,
     scene: Scene,
     input_settings: InputSettings,
@@ -252,10 +251,7 @@ pub fn run<T: 'static, FRender, FEvent, FGui>(
 }
 
 /// Quarantine for the Async part of the API
-async fn setup_async(
-    instance: &Instance,
-    surface: &Surface<'static>,
-) -> (Adapter, Device, Queue) {
+async fn setup_async(instance: &Instance, surface: &Surface<'static>) -> (Adapter, Device, Queue) {
     // The adapter is a handle to our actual graphics card. You can use this to get
     // information about the graphics card such as its name and what backend the
     // adapter uses. We use this to create our Device and Queue.

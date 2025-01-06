@@ -165,8 +165,8 @@ impl Mesh {
     /// todo: Temporarily, a uv_sphere while we figure out how to make better ones.
     pub fn new_sphere(radius: f32, num_lats: usize, num_lons: usize) -> Self {
         let mut vertices = Vec::new();
-        let mut faces = Vec::new();
         // We use faces to construct indices (triangles)
+        let mut faces = Vec::new();
         let mut indices = Vec::new();
 
         // In radians
@@ -245,8 +245,6 @@ impl Mesh {
             }
         }
 
-        // current_i += 1;
-
         for f in faces {
             indices.append(&mut vec![f[0], f[1], f[2], f[0], f[2], f[3]]);
         }
@@ -254,9 +252,118 @@ impl Mesh {
         Self {
             vertices,
             indices,
-            // vertex_buffer: Vec<usize>,
-            // index_buffer: Vec<usize>,
-            // num_elements: u32,
+            material: 0,
+        }
+    }
+
+    // todo: Fill this in.
+    // todo: DRY with cylinder
+    pub fn new_ring(len: f32, radius_inner: f32, radius_outer: f32, num_sides: usize) -> Self {
+        let angle_between_vertices = TAU / num_sides as f32;
+
+        let mut circle_vertices_inner = Vec::new();
+        for i in 0..num_sides {
+            circle_vertices_inner.push(rotate_vec_2d(
+                [radius_inner, 0.],
+                i as f32 * angle_between_vertices,
+            ));
+        }
+
+        // todo DRY
+        let mut circle_vertices_outer = Vec::new();
+        for i in 0..num_sides {
+            circle_vertices_outer.push(rotate_vec_2d(
+                [radius_outer, 0.],
+                i as f32 * angle_between_vertices,
+            ));
+        }
+
+        let half_len = len * 0.5;
+        let mod_ = 2 * num_sides;
+
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        let mut i_vertex = 0;
+
+        // Set up the sides
+        for vert in &circle_vertices_inner {
+            // The number of faces is the number of angles - 1.
+            // Triangle 1: This top, this bottom, next top.
+            indices.append(&mut vec![i_vertex, i_vertex + 1, (i_vertex + 2) % mod_]);
+            // Triangle 2: This bottom, next bottom, next top.
+            indices.append(&mut vec![
+                // Note: Order swapped from outer.
+                i_vertex + 1,
+                (i_vertex + 2) % mod_,
+                (i_vertex + 3) % mod_,
+            ]);
+
+            // On edge face, top
+            vertices.push(Vertex::new(
+                [vert[0], half_len, vert[1]],
+                Vec3::new(vert[0], 0., vert[1]).to_normalized(),
+            ));
+            i_vertex += 1;
+
+            // On edge face, bottom
+            vertices.push(Vertex::new(
+                [vert[0], -half_len, vert[1]],
+                Vec3::new(vert[0], 0., vert[1]).to_normalized(),
+            ));
+            i_vertex += 1;
+        }
+
+        // todo DRY!
+        for vert in &circle_vertices_outer {
+            // The number of faces is the number of angles - 1.
+            // Triangle 1: This top, this bottom, next top.
+            indices.append(&mut vec![i_vertex, i_vertex + 1, (i_vertex + 2) % mod_]);
+            // Triangle 2: This bottom, next bottom, next top.
+            indices.append(&mut vec![
+                i_vertex + 1,
+                (i_vertex + 3) % mod_,
+                (i_vertex + 2) % mod_,
+            ]);
+
+            // On edge face, top
+            vertices.push(Vertex::new(
+                [vert[0], half_len, vert[1]],
+                Vec3::new(vert[0], 0., vert[1]).to_normalized(),
+            ));
+            i_vertex += 1;
+
+            // On edge face, bottom
+            vertices.push(Vertex::new(
+                [vert[0], -half_len, vert[1]],
+                Vec3::new(vert[0], 0., vert[1]).to_normalized(),
+            ));
+            i_vertex += 1;
+        }
+
+        let top_anchor = i_vertex;
+        let bottom_anchor = i_vertex + 1;
+
+        // for (j, vert) in circle_vertices_inner.iter().enumerate() {
+        //     // We need num_sides - 2 triangles using this anchor-vertex algorithm.
+        //     if j != 0 && j != num_sides - 1 {
+        //         indices.append(&mut vec![top_anchor, i_vertex, i_vertex + 2]);
+        //         // We need CCW triangles for both, so reverse order on the bottom face.
+        //         indices.append(&mut vec![bottom_anchor, i_vertex + 3, i_vertex + 1]);
+        //     }
+        //
+        //     // Top face
+        //     vertices.push(Vertex::new([vert[0], half_len, vert[1]], UP_VEC));
+        //     i_vertex += 1;
+        //
+        //     // Bottom face
+        //     vertices.push(Vertex::new([vert[0], -half_len, vert[1]], -UP_VEC));
+        //     i_vertex += 1;
+        // }
+
+        Self {
+            vertices,
+            indices,
             material: 0,
         }
     }

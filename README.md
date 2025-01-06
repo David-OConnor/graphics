@@ -18,7 +18,7 @@ It includes built in FPS-style (Amplified for 6 DOF) camera controls. (WSAD + Sp
 Mouse for pitch and yaw). This can be overridden by the application with arbitrary controls. (See the `event_handler` parameter to
 `graphics::run()`)
 
-It uses the [lin_alg](https://docs.rs/lin-alg2/latest/lin_alg/f32/index.html) library for vector, matrix, and quaternion operations.
+It uses the [lin_alg](https://docs.rs/lin_alg/latest/lin_alg/f32/index.html) library for vector, matrix, and quaternion operations.
 
 Example boilerplate below. Calling `render(state)` starts an event loop. The application can interact with the engine through the `_handler` callbacks; each frame, each hardware event, or through the GUI. Each of these return an `EngineUpdates` struct, which determines if entities, meshes, lighting, or the camera needs to be refreshed.
 

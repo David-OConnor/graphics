@@ -19,7 +19,7 @@ use wgpu::{
     BindGroup, BindGroupLayout, BindingType, Buffer, BufferBindingType, BufferUsages,
     CommandEncoder, CommandEncoderDescriptor, Device, FragmentState, Queue, RenderPass,
     RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp,
-    SurfaceConfiguration, SurfaceTexture,  TextureView, VertexState,
+    SurfaceConfiguration, SurfaceTexture, TextureView, VertexState,
 };
 use winit::{event::DeviceEvent, window::Window};
 
@@ -296,8 +296,6 @@ impl GraphicsState {
             UiLayout::Bottom => (0., 0., width as f32, height as f32 - ui_size),
         };
 
-        // println!("X: {x}, Y: {y} w: {eff_width} h: {eff_height} UI size: {ui_size}");
-
         let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("Render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -334,6 +332,11 @@ impl GraphicsState {
         rpass.set_bind_group(1, &self.bind_groups.lighting, &[]);
 
         rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
+        // Without this size check, the instance buffer slice fails, and we get a panic.
+        if self.instance_buf.size() == 0 {
+            return rpass;
+        }
+
         rpass.set_vertex_buffer(1, self.instance_buf.slice(..));
         rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
 
