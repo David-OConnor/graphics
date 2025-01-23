@@ -132,6 +132,15 @@ fn vs_main(
     return result;
 }
 
+// Linear-to-sRGB Conversion
+fn linear_to_srgb(color: vec3<f32>) -> vec3<f32> {
+    return mix(
+        color * 12.92,
+        pow(color, vec3<f32>(1.0 / 2.2)) * 1.055 - vec3<f32>(0.055),
+        step(vec3<f32>(0.0031308), color)
+    );
+}
+
 /// Fragment shader, which is mostly lighting calculations.
 @fragment
 fn fs_main(vertex: VertexOut) -> @location(0) vec4<f32> {
@@ -149,22 +158,21 @@ fn fs_main(vertex: VertexOut) -> @location(0) vec4<f32> {
 
     // todo: Color the fog.
     // Apply fog proportional to the distance between the camera and fragment.
-    var view_dist = sqrt(pow(view_diff.x, 2.) + pow(view_diff.y, 2.) + pow(view_diff.z, 2.));
-
+    var view_dist = length(view_diff);
     var fog = view_dist * fog_thickness;
 
     // todo: Emmissive term?
 
 //    let tangent_normal = object_normal.xyz * 2.0 - 1.0;
 
+    // Initialize diffuse and specular components
     // These values include color and intensity
     var diffuse = vec4<f32>(0., 0., 0., 0.);
     var specular = vec4<f32>(0., 0., 0., 0.);
 
-
     // todo: arrayLength on this variable is not working. Use size passed from CPU in the
     // todo meanwhile.
-//    for (var i=0; i < arrayLength(lighting.point_lights); i++) {
+//    let num_lights = arrayLength(&lighting.point_lights);
     for (var i=0; i < lighting.lights_len; i++) {
         var light = lighting.point_lights[i];
 
@@ -175,10 +183,9 @@ fn fs_main(vertex: VertexOut) -> @location(0) vec4<f32> {
 
         var light_to_vert_dir = normalize(light_to_vert_diff);
 
-        // This expr applies the inverse square to find falloff with distance.
-        // Note that we use the word "attenuation" in perhaps the inverse of how we usually use it; 1.0
-        // is full intensity here.
-        var dist_attenuation = 1. / (pow(light_to_vert_diff.x, 2.) + pow(light_to_vert_diff.y, 2.) + pow(light_to_vert_diff.z, 2.));
+        let k1 = 0.09; // Linear attenuation term
+        let k2 = 0.032; // Quadratic attenuation term
+        var dist_attenuation = 1.0 / (1.0 + k1 * length(light_to_vert_diff) + k2 * pow(length(light_to_vert_diff), 2.0));
 
         // Diffuse lighting. This is essentially cosine los.
         var diffuse_attenuation = max(dot(vertex.normal, -light_to_vert_dir), 0.);
@@ -190,12 +197,14 @@ fn fs_main(vertex: VertexOut) -> @location(0) vec4<f32> {
         if (diffuse_attenuation > 0.0) {
 //          // Blinn half vector
             var half_dir = normalize(view_dir + light_to_vert_dir);
-
+            // Fresnel Effect: Adjust specular based on view angle
+            var fresnel = pow(1.0 - dot(view_dir, vertex.normal), 5.0);
             var specular_coeff = pow(max(dot(vertex.normal, half_dir), 0.), vertex.shinyness);
+            specular += fresnel * light.specular_color * specular_coeff * light.specular_intensity * dist_attenuation;
 
-            specular_this_light = light.specular_color * specular_coeff * light.specular_intensity * dist_attenuation;
+//            specular_this_light = light.specular_color * specular_coeff * light.specular_intensity * dist_attenuation;
+//            specular += specular_this_light * clamp(dot(vertex.normal, light_to_vert_dir), 0.0, 1.0);
 
-            specular += specular_this_light * clamp(dot(vertex.normal, light_to_vert_dir), 0.0, 1.0);
         }
     }
 
@@ -205,6 +214,9 @@ fn fs_main(vertex: VertexOut) -> @location(0) vec4<f32> {
     // Process alpha separately.
     var lightingColor = ambient.rgb + diffuse.rgb + specular.rgb;
     var result = vec4<f32>(lightingColor * vertex.color.rgb, vertex.color.a);
+
+    let srgb_color = linear_to_srgb(result.rgb);
+    result = vec4<f32>(srgb_color, result.a);
 
     return result;
 }

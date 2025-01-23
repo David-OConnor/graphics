@@ -1,7 +1,7 @@
 /target
-/Cargo.lock
+Cargo.lock
 
-render_3d/models/
-render_3d/images/
+# IDE
+.idea
 
 fonts/
