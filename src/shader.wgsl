@@ -141,6 +141,14 @@ fn linear_to_srgb(color: vec3<f32>) -> vec3<f32> {
     );
 }
 
+// Unused
+//fn fxaa(uv: vec2<f32>) -> vec3<f32> {
+//    let color = textureSample(scene_texture, scene_sampler, uv).rgb;
+//    let color_left = textureSample(scene_texture, scene_sampler, uv + vec2<f32>(-1.0, 0.0) / resolution).rgb;
+//    let color_right = textureSample(scene_texture, scene_sampler, uv + vec2<f32>(1.0, 0.0) / resolution).rgb;
+//    return (color + color_left + color_right) / 3.0; // Simplified averaging
+//}
+
 /// Fragment shader, which is mostly lighting calculations.
 @fragment
 fn fs_main(vertex: VertexOut) -> @location(0) vec4<f32> {

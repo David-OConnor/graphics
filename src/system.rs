@@ -199,7 +199,7 @@ where
             graphics.scene.camera.aspect = eff_width / eff_height;
 
             graphics.depth_texture =
-                Texture::create_depth_texture(&sys.device, &sys.surface_cfg, "Depth texture");
+                Texture::create_depth_texture(&sys.device, &sys.surface_cfg, "Depth texture", 1); //todo temp HC to 4
 
             graphics.scene.camera.update_proj_mat();
 

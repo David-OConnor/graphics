@@ -13,14 +13,7 @@ use std::{sync::Arc, time::Duration};
 
 use egui::Context;
 use lin_alg::f32::Vec3;
-use wgpu::{
-    self,
-    util::{BufferInitDescriptor, DeviceExt},
-    BindGroup, BindGroupLayout, BindingType, Buffer, BufferBindingType, BufferUsages,
-    CommandEncoder, CommandEncoderDescriptor, Device, FragmentState, Queue, RenderPass,
-    RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp,
-    SurfaceConfiguration, SurfaceTexture, TextureView, VertexState,
-};
+use wgpu::{self, util::{BufferInitDescriptor, DeviceExt}, BindGroup, BindGroupLayout, BindingType, Buffer, BufferBindingType, BufferUsages, CommandEncoder, CommandEncoderDescriptor, Device, FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration, SurfaceTexture, TextureView, VertexState, TextureDescriptor};
 use winit::{event::DeviceEvent, window::Window};
 
 use crate::{
@@ -67,6 +60,8 @@ pub(crate) struct GraphicsState {
     pub scene: Scene,
     mesh_mappings: Vec<(i32, u32, u32)>,
     pub window: Arc<Window>,
+    sample_count: u32, // MSAA
+    msaa_texture: Option<TextureView>, // MSAA Multisampled texture
 }
 
 impl GraphicsState {
@@ -107,7 +102,10 @@ impl GraphicsState {
 
         let bind_groups = create_bindgroups(device, &cam_buf, &lighting_buf);
 
-        let depth_texture = Texture::create_depth_texture(device, surface_cfg, "Depth texture");
+        // todo: Problem with EGUI here.
+        let msaa_sample_count = 1; // Enable 4x MSAA
+
+        let depth_texture = Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_sample_count);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Graphics shader"),
@@ -122,7 +120,7 @@ impl GraphicsState {
             });
 
         let pipeline_graphics =
-            create_render_pipeline(device, &pipeline_layout_graphics, shader, surface_cfg);
+            create_render_pipeline(device, &pipeline_layout_graphics, shader, surface_cfg, msaa_sample_count);
 
         // We initialize instances, the instance buffer and mesh mappings in `setup_entities`.
         // let instances = Vec::new();
@@ -139,6 +137,12 @@ impl GraphicsState {
         // let window_size = winit::dpi::LogicalSize::new(scene.window_size.0, scene.window_size.1);
         window.set_title(&scene.window_title);
 
+        let msaa_texture = if msaa_sample_count > 1 {
+            Some(Self::create_msaa_texture(device, surface_cfg, msaa_sample_count))
+        } else {
+            None
+        };
+
         let mut result = Self {
             vertex_buf,
             index_buf,
@@ -153,12 +157,37 @@ impl GraphicsState {
             inputs_commanded: Default::default(),
             mesh_mappings,
             window,
+            sample_count: msaa_sample_count,
+            msaa_texture
         };
 
         result.setup_vertices_indices(device);
         result.setup_entities(device);
 
         result
+    }
+
+    fn create_msaa_texture(
+        device: &Device,
+        surface_cfg: &SurfaceConfiguration,
+        sample_count: u32,
+    ) -> TextureView {
+        let msaa_texture = device.create_texture(&TextureDescriptor {
+            label: Some("Multisampled Texture"),
+            size: wgpu::Extent3d {
+                width: surface_cfg.width,
+                height: surface_cfg.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count,
+            dimension: wgpu::TextureDimension::D2,
+            format: surface_cfg.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+
+        msaa_texture.create_view(&wgpu::TextureViewDescriptor::default())
     }
 
     pub(crate) fn handle_input(&mut self, event: DeviceEvent, input_settings: &InputSettings) {
@@ -296,9 +325,18 @@ impl GraphicsState {
             UiLayout::Bottom => (0., 0., width as f32, height as f32 - ui_size),
         };
 
-        let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("Render pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+        let color_attachment = if let Some(msaa_texture) = &self.msaa_texture {
+            // Use MSAA texture as render target, resolve to the swap chain texture
+            wgpu::RenderPassColorAttachment {
+                view: msaa_texture,
+                resolve_target: Some(output_view), // Resolve the multisample texture
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: StoreOp::Discard
+                },
+            }
+        } else {
+            wgpu::RenderPassColorAttachment {
                 view: output_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
@@ -310,11 +348,17 @@ impl GraphicsState {
                     }),
                     store: StoreOp::Store,
                 },
-            })],
+            }
+        };
+
+        let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("Render pass"),
+            color_attachments: &[Some(color_attachment)],
             depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
                 view: &self.depth_texture.view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
+                    // store: StoreOp::Discard,
                     store: StoreOp::Store,
                 }),
                 stencil_ops: None,
@@ -485,6 +529,7 @@ fn create_render_pipeline(
     layout: &wgpu::PipelineLayout,
     shader: wgpu::ShaderModule,
     config: &SurfaceConfiguration,
+    sample_count: u32,
 ) -> RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render pipeline"),
@@ -495,12 +540,6 @@ fn create_render_pipeline(
             compilation_options: Default::default(),
             buffers: &[Vertex::desc(), Instance::desc()],
         },
-        // fragment: Some(FragmentState {
-        //     module: &shader,
-        //     entry_point: "fs_main",
-        //     compilation_options: Default::default(),
-        //     targets: &[Some(config.format.into())],
-        // }),
         fragment: Some(FragmentState {
             module: &shader,
             entry_point: Some("fs_main"),
@@ -540,7 +579,11 @@ fn create_render_pipeline(
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
-        multisample: wgpu::MultisampleState::default(),
+        multisample: wgpu::MultisampleState {
+            count: sample_count, // Enable MSAA
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
         // If the pipeline will be used with a multiview render pass, this
         // indicates how many array layers the attachments will have.
         multiview: None,
