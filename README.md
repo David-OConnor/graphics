@@ -53,10 +53,21 @@ pub const BODY_COLOR: Color = (0., 1.0, 0.5);
 /// This runs whenever an event (e.g. keyboard, mouse etc) occurs, and provides information on the event.
 fn event_handler(
     _state: &mut State,
-    _event: DeviceEvent,
+    event: DeviceEvent,
     _scene: &mut Scene,
     _dt: f32,
 ) -> EngineUpdates {
+    match event {
+        DeviceEvent::Button { button, state } => {
+            if button == 1 { // Right click
+                match state {
+                    ElementState::Pressed => println!("Click"),
+                    ElementState::Released => (),
+                }
+            }
+        }
+        _ => ()
+    }
     EngineUpdates::default()
 }
 

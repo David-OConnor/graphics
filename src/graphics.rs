@@ -318,7 +318,7 @@ impl GraphicsState {
         ui_settings: &UiSettings,
     ) -> RenderPass<'a> {
         // Adjust the viewport size for 3D, based on how much size the UI is taking up.
-        let (x, y, mut eff_width, mut eff_height) = match ui_settings.layout {
+        let (x, mut y, mut eff_width, mut eff_height) = match ui_settings.layout {
             UiLayout::Left => (ui_size, 0., width as f32 - ui_size, height as f32),
             UiLayout::Right => (0., 0., width as f32 - ui_size, height as f32),
             UiLayout::Top => (0., ui_size, width as f32, height as f32 - ui_size),
@@ -368,6 +368,14 @@ impl GraphicsState {
         });
 
         // Adjust the portion of the 3D rendering to take up the space not taken up by the UI.
+        // if eff_height < 0. {
+        //     // We're getting this in some cases with EGUI widgets. Soften the blow by
+        //     // not crashing.
+        //     eprintln!("Invalid height on viewport: {:?}", eff_height);
+        //     eff_height = 10.;
+        //     y = 0.;
+        // }
+
         rpass.set_viewport(x, y, eff_width, eff_height, 0., 1.);
 
         rpass.set_pipeline(&self.pipeline);
