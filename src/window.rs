@@ -26,10 +26,11 @@ fn load_icon(path: &Path) -> Result<Icon, ImageError> {
     Ok(Icon::from_rgba(icon_rgba, icon_width, icon_height).expect("Failed to open icon"))
 }
 
-impl<T, FRender, FEvent, FGui> State<T, FRender, FEvent, FGui>
+impl<T, FRender, FEventDev, FEventWin, FGui> State<T, FRender, FEventDev, FEventWin, FGui>
 where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
-    FEvent: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {
     fn redraw(&mut self) {
@@ -94,10 +95,11 @@ where
     }
 }
 
-impl<T, FRender, FEvent, FGui> ApplicationHandler for State<T, FRender, FEvent, FGui>
+impl<T, FRender, FEventDev, FEventWin, FGui> ApplicationHandler for State<T, FRender, FEventDev, FEventWin, FGui>
 where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
-    FEvent: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -142,6 +144,20 @@ where
 
         let graphics = &mut self.graphics.as_mut().unwrap();
         let gui = &mut self.gui.as_mut().unwrap();
+
+        if !gui.mouse_in_gui {
+            let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;
+
+            let updates_event = (self.event_win_handler)(
+                &mut self.user_state,
+                event.clone(),
+                &mut graphics.scene,
+                dt_secs,
+            );
+
+            let render = self.render.as_ref().unwrap();
+            process_engine_updates(&updates_event, graphics, &render.device, &render.queue);
+        }
 
         //     if let Some(gui) = self.gui.as_mut() {
         //     if let Some(graphics) = self.graphics.as_mut() {
@@ -236,7 +252,7 @@ where
         if !gui.mouse_in_gui {
             let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;
 
-            let updates_event = (self.event_handler)(
+            let updates_event = (self.event_dev_handler)(
                 &mut self.user_state,
                 event.clone(),
                 &mut graphics.scene,

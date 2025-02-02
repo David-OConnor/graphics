@@ -51,24 +51,50 @@ pub const BODY_SHINYNESS: f32 = 2.;
 pub const BODY_COLOR: Color = (0., 1.0, 0.5);
 
 /// This runs whenever an event (e.g. keyboard, mouse etc) occurs, and provides information on the event.
-fn event_handler(
-    _state: &mut State,
+fn event_dev_handler(
+    state_: &mut State,
     event: DeviceEvent,
-    _scene: &mut Scene,
+    scene: &mut Scene,
     _dt: f32,
 ) -> EngineUpdates {
     match event {
+        DeviceEvent::MouseMotion { delta } => {
+            // let (dx, dy) = delta; // Relative cursor movement
+            // println!("Relative cursor position change: dx: {}, dy: {}", dx, dy);
+        }
         DeviceEvent::Button { button, state } => {
-            if button == 1 { // Right click
+            if button == 1 {
+                // Right click
                 match state {
-                    ElementState::Pressed => println!("Click"),
+                    ElementState::Pressed => {
+                        if let Some(cursor) = state_.ui.cursor_pos {
+                            let selected_ray = screen_to_render(cursor, &scene.camera);
+
+                            println!("Sel ray: {:?}", selected_ray);
+                        }
+                    }
                     ElementState::Released => (),
                 }
             }
         }
-        _ => ()
+        _ => (),
     }
     EngineUpdates::default()
+}
+
+fn event_win_handler(
+    state: &mut State,
+    event: WindowEvent,
+    _scene: &mut Scene,
+    _dt: f32,
+) -> EngineUpdates {
+    match event {
+        WindowEvent::CursorMoved {device_id, position} => {
+            state.ui.cursor_pos = Some((position.x as f32, position.y as f32))
+        }
+        _ => (),
+    }
+    EngineUpdates::default() 
 }
 
 /// This runs each frame.
@@ -174,7 +200,8 @@ pub fn render(state: State) {
         input_settings,
         ui_settings,
         render_handler,
-        event_handler,
+        event_dev_handler,
+        event_win_handler,
         ui_handler,
     );
 }

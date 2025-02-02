@@ -21,7 +21,7 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{Icon, Window},
 };
-
+use winit::event::WindowEvent;
 use crate::{
     graphics::GraphicsState,
     gui::GuiState,
@@ -43,10 +43,11 @@ pub(crate) struct RenderState {
     pub surface_cfg: SurfaceConfiguration,
 }
 
-pub struct State<T: 'static, FRender, FEvent, FGui>
+pub struct State<T: 'static, FRender, FEventDev, FEventWin, FGui>
 where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
-    FEvent: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {
     pub instance: Instance,
@@ -57,7 +58,8 @@ where
     pub gui: Option<GuiState>,
     pub user_state: T,
     pub render_handler: FRender,
-    pub event_handler: FEvent,
+    pub event_dev_handler: FEventDev,
+    pub event_win_handler: FEventWin,
     pub gui_handler: FGui,
     pub input_settings: InputSettings,
     pub ui_settings: UiSettings,
@@ -66,10 +68,11 @@ where
     pub dt: Duration,
 }
 
-impl<T: 'static, FRender, FEvent, FGui> State<T, FRender, FEvent, FGui>
+impl<T: 'static, FRender, FEventDev, FEventWin, FGui> State<T, FRender, FEventDev, FEventWin, FGui>
 where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
-    FEvent: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {
     /// This constructor sets up the basics required for Winit's events loop. We initialize the important
@@ -80,7 +83,8 @@ where
         ui_settings: UiSettings,
         user_state: T,
         render_handler: FRender,
-        event_handler: FEvent,
+        event_dev_handler: FEventDev,
+        event_win_handler: FEventWin,
         gui_handler: FGui,
     ) -> Self {
         let last_render_time = Instant::now();
@@ -99,7 +103,8 @@ where
             gui: None,
             user_state,
             render_handler,
-            event_handler,
+            event_dev_handler,
+            event_win_handler,
             gui_handler,
             input_settings,
             ui_settings,
@@ -219,28 +224,31 @@ where
 /// `render_handler` allows application code to run each frame.
 /// `event_handler` allows application code to handle device events, such as user input.
 /// `gui_handler` is where the EGUI code is written to describe the UI.
-pub fn run<T: 'static, FRender, FEvent, FGui>(
+pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
     user_state: T,
     scene: Scene,
     input_settings: InputSettings,
     ui_settings: UiSettings,
     render_handler: FRender,
-    event_handler: FEvent,
+    event_dev_handler: FEventDev,
+    event_win_handler: FEventWin,
     gui_handler: FGui,
 ) where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
-    FEvent: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {
     let (_frame_count, _accum_time) = (0, 0.0);
 
-    let mut state: State<T, FRender, FEvent, FGui> = State::new(
+    let mut state: State<T, FRender, FEventDev, FEventWin, FGui> = State::new(
         scene,
         input_settings,
         ui_settings,
         user_state,
         render_handler,
-        event_handler,
+        event_dev_handler,
+        event_win_handler,
         gui_handler,
     );
 
