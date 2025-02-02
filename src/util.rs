@@ -1,4 +1,5 @@
-use lin_alg::f32::{Mat4, Vec4, Vec3};
+use lin_alg::f32::{Mat4, Vec3, Vec4};
+
 use crate::Camera;
 
 /// Convert a screen position (x, y) to a 3D ray in world space.
@@ -14,7 +15,7 @@ pub fn screen_to_render(screen_pos: (f32, f32), cam: &Camera) -> (Vec3, Vec3) {
         Some(p) => p,
         None => {
             eprintln!("Error inverting the projection matrix.");
-            return (Vec3::new_zero(), Vec3::new_zero())
+            return (Vec3::new_zero(), Vec3::new_zero());
         }
     };
 

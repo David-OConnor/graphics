@@ -95,7 +95,8 @@ where
     }
 }
 
-impl<T, FRender, FEventDev, FEventWin, FGui> ApplicationHandler for State<T, FRender, FEventDev, FEventWin, FGui>
+impl<T, FRender, FEventDev, FEventWin, FGui> ApplicationHandler
+    for State<T, FRender, FEventDev, FEventWin, FGui>
 where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
     FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,

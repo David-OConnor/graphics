@@ -13,7 +13,14 @@ use std::{sync::Arc, time::Duration};
 
 use egui::Context;
 use lin_alg::f32::Vec3;
-use wgpu::{self, util::{BufferInitDescriptor, DeviceExt}, BindGroup, BindGroupLayout, BindingType, Buffer, BufferBindingType, BufferUsages, CommandEncoder, CommandEncoderDescriptor, Device, FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration, SurfaceTexture, TextureView, VertexState, TextureDescriptor};
+use wgpu::{
+    self,
+    util::{BufferInitDescriptor, DeviceExt},
+    BindGroup, BindGroupLayout, BindingType, Buffer, BufferBindingType, BufferUsages,
+    CommandEncoder, CommandEncoderDescriptor, Device, FragmentState, Queue, RenderPass,
+    RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp,
+    SurfaceConfiguration, SurfaceTexture, TextureDescriptor, TextureView, VertexState,
+};
 use winit::{event::DeviceEvent, window::Window};
 
 use crate::{
@@ -60,7 +67,7 @@ pub(crate) struct GraphicsState {
     pub scene: Scene,
     mesh_mappings: Vec<(i32, u32, u32)>,
     pub window: Arc<Window>,
-    sample_count: u32, // MSAA
+    sample_count: u32,                 // MSAA
     msaa_texture: Option<TextureView>, // MSAA Multisampled texture
 }
 
@@ -105,7 +112,8 @@ impl GraphicsState {
         // todo: Problem with EGUI here.
         let msaa_sample_count = 1; // Enable 4x MSAA
 
-        let depth_texture = Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_sample_count);
+        let depth_texture =
+            Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_sample_count);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Graphics shader"),
@@ -119,8 +127,13 @@ impl GraphicsState {
                 push_constant_ranges: &[],
             });
 
-        let pipeline_graphics =
-            create_render_pipeline(device, &pipeline_layout_graphics, shader, surface_cfg, msaa_sample_count);
+        let pipeline_graphics = create_render_pipeline(
+            device,
+            &pipeline_layout_graphics,
+            shader,
+            surface_cfg,
+            msaa_sample_count,
+        );
 
         // We initialize instances, the instance buffer and mesh mappings in `setup_entities`.
         // let instances = Vec::new();
@@ -138,7 +151,11 @@ impl GraphicsState {
         window.set_title(&scene.window_title);
 
         let msaa_texture = if msaa_sample_count > 1 {
-            Some(Self::create_msaa_texture(device, surface_cfg, msaa_sample_count))
+            Some(Self::create_msaa_texture(
+                device,
+                surface_cfg,
+                msaa_sample_count,
+            ))
         } else {
             None
         };
@@ -158,7 +175,7 @@ impl GraphicsState {
             mesh_mappings,
             window,
             sample_count: msaa_sample_count,
-            msaa_texture
+            msaa_texture,
         };
 
         result.setup_vertices_indices(device);
@@ -332,7 +349,7 @@ impl GraphicsState {
                 resolve_target: Some(output_view), // Resolve the multisample texture
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: StoreOp::Discard
+                    store: StoreOp::Discard,
                 },
             }
         } else {

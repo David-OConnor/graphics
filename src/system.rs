@@ -17,11 +17,11 @@ use wgpu::{
 };
 use winit::{
     dpi::PhysicalSize,
-    event::DeviceEvent,
+    event::{DeviceEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::{Icon, Window},
 };
-use winit::event::WindowEvent;
+
 use crate::{
     graphics::GraphicsState,
     gui::GuiState,
