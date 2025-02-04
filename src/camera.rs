@@ -46,7 +46,6 @@ impl Camera {
     /// position, applied before the camera's rotation.
     pub fn view_mat(&self) -> Mat4 {
         self.orientation.inverse().to_matrix() * Mat4::new_translation(self.position * -1.)
-        // self.orientation.to_matrix() * Mat4::new_translation(self.position * -1.)
     }
 
     pub fn view_size(&self, far: bool) -> (f32, f32) {
