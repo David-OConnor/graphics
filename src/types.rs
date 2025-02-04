@@ -1,6 +1,6 @@
 //! https://sotrh.github.io/learn-wgpu/beginner/tutorial9-models/#rendering-a-mesh
 
-use lin_alg::f32::{Mat4, Quaternion, Vec3};
+use lin_alg::f32::{Mat4, Quaternion, Vec3, Vec4};
 
 use crate::{camera::Camera, lighting::Lighting};
 
@@ -331,6 +331,45 @@ impl Default for Scene {
             window_title: "(Window title here)".to_owned(),
             window_size: (900., 600.),
         }
+    }
+}
+
+impl Scene {
+    /// Convert a screen position (x, y) to a 3D ray in world space.
+    ///
+    /// The canonical use case for this is finding the object in 3D space a user is intending to select
+    /// with the cursor.A follow-up operation, for example, may be to find all objects that this vector
+    /// passes near, and possibly select the one closest to the camera.
+    pub fn screen_to_render(&self, screen_pos: (f32, f32)) -> (Vec3, Vec3) {
+        let proj_view = self.camera.proj_mat.clone() * self.camera.view_mat();
+
+        let proj_view_inv = match proj_view.inverse() {
+            Some(p) => p,
+            None => {
+                eprintln!("Error inverting the projection matrix.");
+                return (Vec3::new_zero(), Vec3::new_zero());
+            }
+        };
+
+        // Convert screen position (assumed normalized to [0, 1] range)
+        let sx = screen_pos.0 / self.window_size.0;
+        let sy = screen_pos.1 / self.window_size.1;
+
+        let clip_x = 2.0 * sx - 1.0;
+        let clip_y = 1.0 - 2.0 * sy; // Flips the Y so 0 is top, 1 is bottom
+
+        let near_clip = Vec4::new(clip_x, clip_y, 0.0, 1.0);
+        let far_clip = Vec4::new(clip_x, clip_y, 1.0, 1.0);
+
+        // Un-project them to world space.
+        let near_world_h = proj_view_inv.clone() * near_clip;
+        let far_world_h = proj_view_inv * far_clip;
+
+        // Perspective divide to go from homogenous -> 3D.
+        let near_world = near_world_h.xyz() / near_world_h.w;
+        let far_world = far_world_h.xyz() / far_world_h.w;
+
+        (near_world, far_world)
     }
 }
 

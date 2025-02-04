@@ -63,14 +63,13 @@ fn event_dev_handler(
             // println!("Relative cursor position change: dx: {}, dy: {}", dx, dy);
         }
         DeviceEvent::Button { button, state } => {
-            if button == 1 {
-                // Right click
+            if button == 1 {  // Right click
                 match state {
                     ElementState::Pressed => {
                         if let Some(cursor) = state_.ui.cursor_pos {
-                            let selected_ray = screen_to_render(cursor, &scene.camera);
+                            let selected_ray = scene.screen_to_render(cursor);
 
-                            println!("Sel ray: {:?}", selected_ray);
+                            let objects_selected = points_along_ray(selected_ray, &objectcs, 1.0);
                         }
                     }
                     ElementState::Released => (),
