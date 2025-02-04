@@ -1,6 +1,6 @@
 [package]
 name = "graphics"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["David O'Connor <the_alchemist@fastmail.com>"]
 description = "A 3D rendering engine for rust programs, with GUI integration"
 edition = "2021"
@@ -18,8 +18,8 @@ license = "MIT"
 
 [dependencies]
 wgpu = "^23.0.1"
-#lin_alg = { version = "^1.0.4", features = ["computer_graphics"] }
-lin_alg = { path = "../lin_alg", features = ["computer_graphics"] }
+lin_alg = { version = "^1.0.5", features = ["computer_graphics"] }
+#lin_alg = { path = "../lin_alg", features = ["computer_graphics"] }
 
 pollster = "^0.4.0"  # For 2 WGPU init fns that use async.
 

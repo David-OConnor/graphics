@@ -202,6 +202,7 @@ where
             };
 
             graphics.scene.camera.aspect = eff_width / eff_height;
+            graphics.scene.window_size = (new_size.width as f32, new_size.height as f32);
 
             graphics.depth_texture =
                 Texture::create_depth_texture(&sys.device, &sys.surface_cfg, "Depth texture", 1); //todo temp HC to 4
