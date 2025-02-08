@@ -1,5 +1,7 @@
 #![allow(mixed_script_confusables)] // Theta in meshes
 
+#[cfg(feature = "app_utils")]
+pub mod app_utils;
 mod camera;
 mod graphics;
 mod gui;

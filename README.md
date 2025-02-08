@@ -20,6 +20,8 @@ Mouse for pitch and yaw). This can be overridden by the application with arbitra
 
 It uses the [lin_alg](https://docs.rs/lin_alg/latest/lin_alg/f32/index.html) library for vector, matrix, and quaternion operations.
 
+You can enable the `app_utils` feature for utility functionality that is useful in applications that might use this library, but is not directly related to the GUI.
+
 Example boilerplate below. Calling `render(state)` starts an event loop. The application can interact with the engine through the `_handler` callbacks; each frame, each hardware event, or through the GUI. Each of these return an `EngineUpdates` struct, which determines if entities, meshes, lighting, or the camera needs to be refreshed.
 
 ```rust

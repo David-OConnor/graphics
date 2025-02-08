@@ -180,9 +180,9 @@ where
             return;
         }
 
-        let mut sys = &mut self.render.as_mut().unwrap();
-        let mut graphics = &mut self.graphics.as_mut().unwrap();
-        let mut gui = &mut self.gui.as_mut().unwrap();
+        let mut sys = self.render.as_mut().unwrap();
+        let mut graphics = self.graphics.as_mut().unwrap();
+        let mut gui = self.gui.as_mut().unwrap();
 
         if new_size.width > 0 && new_size.height > 0 {
             sys.size = new_size;
@@ -209,10 +209,8 @@ where
 
             graphics.scene.camera.update_proj_mat();
 
-            // todo: Not working; still need to change the camera from an input for the new aspect ratio
-            // todo to take effect.
-            // sys.queue
-            //     .write_buffer(&graphics.camera_buf, 0, &self.scene.camera.to_bytes());
+            // This is required to set the correct render aspect-ratio.
+            graphics.update_camera(&sys.queue);
         }
     }
 }

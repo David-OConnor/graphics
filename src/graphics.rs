@@ -473,7 +473,7 @@ impl GraphicsState {
                     );
 
                     if cam_changed {
-                        queue.write_buffer(&self.camera_buf, 0, &self.scene.camera.to_bytes());
+                        self.update_camera(queue);
                     }
 
                     // Reset the mouse inputs; keyboard inputs are reset by their release event.

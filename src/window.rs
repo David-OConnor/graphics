@@ -229,7 +229,7 @@ where
                 self.graphics.as_mut().unwrap().inputs_commanded.free_look = false;
             }
             WindowEvent::CursorLeft { device_id: _ } => {
-                // todo: Not working?
+                // When the cursor moves out of the window, stop mouse-looking.
                 graphics.inputs_commanded.free_look = false;
             }
             _ => {}
