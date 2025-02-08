@@ -17,9 +17,9 @@ license = "MIT"
 
 
 [dependencies]
-wgpu = "^23.0.1"
-lin_alg = { version = "^1.0.5", features = ["computer_graphics"] }
-#lin_alg = { path = "../lin_alg", features = ["computer_graphics"] }
+wgpu = "^24.0.1"
+#lin_alg = { version = "^1.0.5", features = ["computer_graphics"] }
+lin_alg = { path = "../lin_alg", features = ["computer_graphics"] }
 
 pollster = "^0.4.0"  # For 2 WGPU init fns that use async.
 
@@ -27,6 +27,6 @@ image = "^0.25.2" # For loading textures
 obj = "^0.10.2"  # For loading OBJ meshes.
 
 winit = "^0.30.5"
-egui = "^0.30.0"
-egui-wgpu = "^0.30.0"
-egui-winit = "^0.30.0"
+egui = "^0.31.0"
+egui-wgpu = "^0.31.0"
+egui-winit = "^0.31.0"

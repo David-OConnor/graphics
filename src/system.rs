@@ -91,7 +91,7 @@ where
         let dt = Duration::new(0, 0);
 
         // The instance is a handle to our GPU. Its main purpose is to create Adapters and Surfaces.
-        let instance = Instance::new(InstanceDescriptor {
+        let instance = Instance::new(&InstanceDescriptor {
             backends: Backends::VULKAN,
             ..Default::default()
         });

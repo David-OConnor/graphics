@@ -29,7 +29,7 @@ use std::f32::consts::TAU;
 
 use graphics::{
     Camera, ControlScheme, DeviceEvent, EngineUpdates, Entity, InputSettings, LightType, Lighting,
-    Mesh, PointLight, Scene, UiLayout, UiSettings,
+    Mesh, PointLight, Scene, UiLayout, UiSettings, RIGHT_VEC, UP_VEC
 };
 use egui::{Context, Slider, TopBottomPanel};
 
@@ -107,6 +107,76 @@ const SLIDER_WIDTH_ORIENTATION: f32 = 100.;
 pub const ROW_SPACING: f32 = 22.;
 pub const COL_SPACING: f32 = 30.;
 
+fn cam_controls(
+    cam: &mut Camera,
+    state_ui: &mut StateUi,
+    engine_updates: &mut EngineUpdates,
+    ui: &mut Ui,
+) {
+    // todo: Here and at init, set the camera dist dynamically based on mol size.
+    // todo: Set the position not relative to 0, but  relative to the center of the atoms.
+
+    let mut changed = false;
+
+    ui.horizontal(|ui| {
+        ui.label("Camera:");
+
+        // Preset buttons
+
+        if ui.button("Front").clicked() {
+            cam.position = Vec3::new(
+                state_ui.mol_center.x,
+                state_ui.mol_center.y,
+                state_ui.mol_center.z - (state_ui.mol_size + CAM_INIT_OFFSET),
+            );
+            cam.orientation = Quaternion::new_identity();
+
+            changed = true;
+        }
+
+        if ui.button("Top").clicked() {
+            cam.position = Vec3::new(
+                state_ui.mol_center.x,
+                state_ui.mol_center.y + (state_ui.mol_size + CAM_INIT_OFFSET),
+                state_ui.mol_center.z,
+            );
+            cam.orientation = Quaternion::from_axis_angle(RIGHT_VEC, TAU / 4.);
+
+            changed = true;
+        }
+
+        if ui.button("Left").clicked() {
+            cam.position = Vec3::new(
+                state_ui.mol_center.x - (state_ui.mol_size + CAM_INIT_OFFSET),
+                state_ui.mol_center.y,
+                state_ui.mol_center.z,
+            );
+            cam.orientation = Quaternion::from_axis_angle(UP_VEC, TAU / 4.);
+
+            changed = true;
+        }
+
+        ui.label("Depth:");
+        let depth_prev = state_ui.view_depth;
+        ui.add(Slider::new(
+            &mut state_ui.view_depth,
+            VIEW_DEPTH_MIN..=VIEW_DEPTH_MAX,
+        ));
+
+        if state_ui.view_depth != depth_prev {
+
+            cam.far = state_ui.view_depth as f32;
+            cam.update_proj_mat();
+            changed = true;
+        }
+
+    });
+
+    if changed {
+        engine_updates.camera = true;
+    }
+}
+
 /// This function draws the (immediate-mode) GUI.
 /// [UI items](https://docs.rs/egui/latest/egui/struct.Ui.html#method.heading)
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
@@ -142,16 +212,35 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 }
 
 
+fn draw_entities(entities: &mut Vec<Entity>, snapshots: &[Snapshot]) {
+    *entities = Vec::new();
+    
+    entities.push(Entity::new(
+        // manually set the `scale_partial` field with a `Vec3` if using non-uniform scaling. 
+        Entity::new(
+            MESH_BOND, // Index of the mesh.
+            vec3_to_f32(center) + offset_b,
+            orientation, // A quaternion,
+            1., // Scale
+            BOND_COLOR,
+            BODY_SHINYNESS,
+        )
+    ))
+}
+
 /// Entry point to our render and event loop.
 pub fn render(state: State) {
     let mut scene = Scene {
-        meshes: vec![Mesh::new_sphere(1., 12, 12)],
+        meshes: vec![
+            Mesh::new_sphere(1., 12, 12),
+            Mesh::from_obj_file("sphere.obj"),
+        ],
         entities: Vec::new(), // updated below.
         camera: Camera {
             fov_y: TAU / 8.,
             position: Vec3::new(0., 10., -20.),
             far: RENDER_DIST,
-            orientation: Quaternion::from_axis_angle(Vec3::new(1., 0., 0.), TAU / 16.),
+            orientation: Quaternion::from_axis_angle(RIGHT_VEC, TAU / 16.),
             ..Default::default()
         },
         lighting: Lighting {
@@ -185,7 +274,7 @@ pub fn render(state: State) {
 
     // Initialize entities.
     if !state.snapshots.is_empty() {
-        change_snapshot(
+        draw_entities(
             &mut scene.entities,
             &state.snapshots[state.ui.snapshot_selected],
         )

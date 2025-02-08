@@ -683,17 +683,11 @@ impl Mesh {
         }
     }
 
-    /// Load a mesh from a obj file.
+    /// Load a mesh from obj data.
     /// [File type description](https://en.wikipedia.org/wiki/Wavefront_.obj_file)
     /// [Example](https://github.com/gfx-rs/wgpu/blob/master/wgpu/examples/skybox/main.rs)
-    pub fn from_obj_file(filename: &str) -> Self {
-        let f = File::open(filename).unwrap();
-        let mut reader = BufReader::new(f);
-        let mut file_buf = Vec::new();
-
-        reader.read_to_end(&mut file_buf).unwrap();
-
-        let data = obj::ObjData::load_buf(&file_buf[..]).unwrap();
+    pub fn from_obj(obj_data: &[u8]) -> Self {
+        let data = obj::ObjData::load_buf(&obj_data[..]).unwrap();
         let mut vertices = Vec::new();
 
         for object in data.objects {
@@ -726,5 +720,19 @@ impl Mesh {
             indices,
             material: 0,
         }
+    }
+
+    /// Load a mesh from a obj file.
+    /// [File type description](https://en.wikipedia.org/wiki/Wavefront_.obj_file)
+    /// [Example](https://github.com/gfx-rs/wgpu/blob/master/wgpu/examples/skybox/main.rs)
+    pub fn from_obj_file(filename: &str) -> Self {
+        // todo: Add a way to load from an obj bytestream etc instead of just file API.
+        let f = File::open(filename).unwrap();
+        let mut reader = BufReader::new(f);
+        let mut file_buf = Vec::new();
+
+        reader.read_to_end(&mut file_buf).unwrap();
+
+        Self::from_obj(&file_buf)
     }
 }

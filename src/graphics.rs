@@ -34,17 +34,17 @@ use crate::{
     },
 };
 
-pub(crate) const UP_VEC: Vec3 = Vec3 {
+pub const UP_VEC: Vec3 = Vec3 {
     x: 0.,
     y: 1.,
     z: 0.,
 };
-pub(crate) const RIGHT_VEC: Vec3 = Vec3 {
+pub const RIGHT_VEC: Vec3 = Vec3 {
     x: 1.,
     y: 0.,
     z: 0.,
 };
-pub(crate) const FWD_VEC: Vec3 = Vec3 {
+pub const FWD_VEC: Vec3 = Vec3 {
     x: 0.,
     y: 0.,
     z: 1.,
@@ -276,11 +276,17 @@ impl GraphicsState {
         for (i, mesh) in self.scene.meshes.iter().enumerate() {
             let mut instance_count_this_mesh = 0;
             for entity in self.scene.entities.iter().filter(|e| e.mesh == i) {
+                let scale = match entity.scale_partial {
+                    Some(s) => s,
+                    None => Vec3::new(entity.scale, entity.scale, entity.scale),
+                };
+
                 instances.push(Instance {
                     // todo: entity into method?
                     position: entity.position,
                     orientation: entity.orientation,
-                    scale: entity.scale,
+                    // scale: entity.scale,
+                    scale,
                     color: Vec3::new(entity.color.0, entity.color.1, entity.color.2),
                     opacity: entity.opacity,
                     shinyness: entity.shinyness,

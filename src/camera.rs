@@ -21,7 +21,7 @@ pub struct Camera {
     pub position: Vec3,
     pub orientation: Quaternion,
     /// We store the projection matrix here since it only changes when we change the camera cfg.
-    pub proj_mat: Mat4,
+    pub proj_mat: Mat4, // todo: Make provide, and provide a constructor?
 }
 
 impl Camera {

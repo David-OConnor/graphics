@@ -124,7 +124,7 @@ impl Vertex {
 pub struct Instance {
     pub position: Vec3,
     pub orientation: Quaternion,
-    pub scale: f32,
+    pub scale: Vec3,
     pub color: Vec3,
     pub opacity: f32,
     pub shinyness: f32,
@@ -211,7 +211,7 @@ impl Instance {
 
         let model_mat = Mat4::new_translation(self.position)
             * self.orientation.to_matrix()
-            * Mat4::new_scaler(self.scale);
+            * Mat4::new_scaler_partial(self.scale);
 
         let normal_mat = self.orientation.to_matrix3();
 
@@ -258,6 +258,9 @@ pub struct Entity {
     /// Rotation, relative to up.
     pub orientation: Quaternion,
     pub scale: f32, // 1.0 is original.
+    /// Scale by  axis. If `Some`, overrides scale.
+    /// Not set in the constructor; set after manually.
+    pub scale_partial: Option<Vec3>,
     pub color: (f32, f32, f32),
     pub opacity: f32,
     pub shinyness: f32, // 0 to 1.
@@ -277,6 +280,7 @@ impl Entity {
             position,
             orientation,
             scale,
+            scale_partial: None,
             color,
             opacity: 1.,
             shinyness,
