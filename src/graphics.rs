@@ -454,8 +454,6 @@ impl GraphicsState {
         unsafe {
             i += 1;
         }
-        let start_time = std::time::Instant::now(); // todo temp
-
         // Adjust camera inputs using the in-engine control scheme.
         // Note that camera settings adjusted by the application code are handled in
         // `update_camera`.

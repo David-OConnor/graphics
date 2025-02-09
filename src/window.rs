@@ -38,8 +38,8 @@ where
             return;
         }
 
-        let sys = &self.render.as_ref().unwrap();
-        let graphics = &mut self.graphics.as_mut().unwrap();
+        let sys = self.render.as_ref().unwrap();
+        let graphics = self.graphics.as_mut().unwrap();
 
         let now = Instant::now();
         self.dt = now - self.last_render_time;
