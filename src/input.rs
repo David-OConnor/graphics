@@ -59,7 +59,6 @@ pub(crate) fn add_input_cmd(event: DeviceEvent, inputs: &mut InputsCommanded) {
     match event {
         DeviceEvent::Key(key) => {
             if key.state == ElementState::Pressed {
-                // todo: Map to PhysicalKey directly without the scancode part.
                 match key.physical_key {
                     Code(key) => match key {
                         KeyCode::KeyW => {
@@ -147,7 +146,6 @@ pub(crate) fn add_input_cmd(event: DeviceEvent, inputs: &mut InputsCommanded) {
 }
 
 /// Adjust the camera orientation and position. Return if there was a change, so we know to update the buffer.
-/// todo: copyied from `peptide`'s Bevy interface.
 pub fn adjust_camera(
     cam: &mut Camera,
     inputs: &InputsCommanded,

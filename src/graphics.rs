@@ -341,12 +341,32 @@ impl GraphicsState {
         ui_settings: &UiSettings,
     ) -> RenderPass<'a> {
         // Adjust the viewport size for 3D, based on how much size the UI is taking up.
-        let (x, mut y, mut eff_width, mut eff_height) = match ui_settings.layout {
+        let (mut x, mut y, mut eff_width, mut eff_height) = match ui_settings.layout {
             UiLayout::Left => (ui_size, 0., width as f32 - ui_size, height as f32),
             UiLayout::Right => (0., 0., width as f32 - ui_size, height as f32),
             UiLayout::Top => (0., ui_size, width as f32, height as f32 - ui_size),
             UiLayout::Bottom => (0., 0., width as f32, height as f32 - ui_size),
         };
+
+        // This has come up during EGUI file_dialog. Causes the render to effectively overlap
+        // the UI, instead of being next to it.
+        match ui_settings.layout {
+            UiLayout::Left | UiLayout::Right => {
+                eprintln!("Ui size greater than width");
+                if ui_size > width as f32 {
+                    (x, y, eff_width, eff_height) =
+                        (0., 0., width as f32, height as f32);
+                }
+            }
+            _ => {
+                eprintln!("Ui size greater than height");
+                if ui_size >= height as f32 {
+                    (x, y, eff_width,  eff_height) =
+                        (0., 0., width as f32, height as f32);
+                }
+            }
+        }
+
 
         let color_attachment = if let Some(msaa_texture) = &self.msaa_texture {
             // Use MSAA texture as render target, resolve to the swap chain texture
@@ -381,7 +401,6 @@ impl GraphicsState {
                 view: &self.depth_texture.view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
-                    // store: StoreOp::Discard,
                     store: StoreOp::Store,
                 }),
                 stencil_ops: None,
@@ -389,15 +408,6 @@ impl GraphicsState {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
-
-        // Adjust the portion of the 3D rendering to take up the space not taken up by the UI.
-        // if eff_height < 0. {
-        //     // We're getting this in some cases with EGUI widgets. Soften the blow by
-        //     // not crashing.
-        //     eprintln!("Invalid height on viewport: {:?}", eff_height);
-        //     eff_height = 10.;
-        //     y = 0.;
-        // }
 
         rpass.set_viewport(x, y, eff_width, eff_height, 0., 1.);
 
