@@ -15,7 +15,7 @@ mod window;
 
 pub use camera::Camera;
 pub use graphics::{FWD_VEC, RIGHT_VEC, UP_VEC};
-pub use input::{InputsCommanded, adjust_camera};
+pub use input::{adjust_camera, InputsCommanded};
 pub use lighting::{LightType, Lighting, PointLight};
 pub use system::run;
 pub use types::{
@@ -26,5 +26,5 @@ pub use types::{
 // todo: the equiv for mouse events too. And in the future, Gamepad events.
 pub use winit::{
     self,
-    event::{self, DeviceEvent, ElementState},
+    event::{self, DeviceEvent, ElementState, WindowEvent},
 };

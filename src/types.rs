@@ -34,11 +34,11 @@ pub struct Vertex {
     /// they can be used alongside normal maps which allow you to create sub surface
     /// lighting detail to your model(bumpiness)."
     /// This is used to orient normal maps; corresponds to the +X texture direction.
-    pub tangent: [f32; 3],
+    pub tangent: Vec3,
     /// A bitangent vector is the result of the Cross Product between Vertex Normal and Vertex
     /// Tangent which is a unit vector perpendicular to both vectors at a given point.
     /// This is used to orient normal maps; corresponds to the +Y texture direction.
-    pub bitangent: [f32; 3],
+    pub bitangent: Vec3,
 }
 
 impl Vertex {
@@ -48,8 +48,8 @@ impl Vertex {
             position,
             tex_coords: [0., 0.],
             normal,
-            tangent: [0., 0., 0.],
-            bitangent: [0., 0., 0.],
+            tangent: Vec3::new_zero(),
+            bitangent: Vec3::new_zero(),
         }
     }
 
@@ -63,13 +63,8 @@ impl Vertex {
         result[16..20].clone_from_slice(&self.tex_coords[1].to_ne_bytes());
 
         result[20..32].clone_from_slice(&self.normal.to_bytes_vertex());
-
-        result[32..36].clone_from_slice(&self.tangent[0].to_ne_bytes());
-        result[36..40].clone_from_slice(&self.tangent[1].to_ne_bytes());
-        result[40..44].clone_from_slice(&self.tangent[2].to_ne_bytes());
-        result[44..48].clone_from_slice(&self.bitangent[0].to_ne_bytes());
-        result[48..52].clone_from_slice(&self.bitangent[1].to_ne_bytes());
-        result[52..56].clone_from_slice(&self.bitangent[2].to_ne_bytes());
+        result[32..44].clone_from_slice(&self.tangent.to_bytes_vertex());
+        result[44..56].clone_from_slice(&self.bitangent.to_bytes_vertex());
 
         result
     }

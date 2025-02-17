@@ -352,21 +352,18 @@ impl GraphicsState {
         // the UI, instead of being next to it.
         match ui_settings.layout {
             UiLayout::Left | UiLayout::Right => {
-                eprintln!("Ui size greater than width");
                 if ui_size > width as f32 {
-                    (x, y, eff_width, eff_height) =
-                        (0., 0., width as f32, height as f32);
+                    // eprintln!("Ui size greater than width");
+                    (x, y, eff_width, eff_height) = (0., 0., width as f32, height as f32);
                 }
             }
             _ => {
-                eprintln!("Ui size greater than height");
                 if ui_size >= height as f32 {
-                    (x, y, eff_width,  eff_height) =
-                        (0., 0., width as f32, height as f32);
+                    // eprintln!("Ui size greater than height");
+                    (x, y, eff_width, eff_height) = (0., 0., width as f32, height as f32);
                 }
             }
         }
-
 
         let color_attachment = if let Some(msaa_texture) = &self.msaa_texture {
             // Use MSAA texture as render target, resolve to the swap chain texture
