@@ -218,6 +218,14 @@ where
                 self.graphics_settings.msaa_samples,
             );
 
+            if let Some(t) = &mut graphics.msaa_texture {
+                *t = GraphicsState::create_msaa_texture(
+                    &sys.device,
+                    &sys.surface_cfg,
+                    self.graphics_settings.msaa_samples,
+                );
+            }
+
             graphics.scene.camera.update_proj_mat();
 
             // This is required to set the correct render aspect-ratio.

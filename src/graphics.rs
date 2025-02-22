@@ -60,12 +60,12 @@ pub(crate) struct GraphicsState {
     lighting_buf: Buffer,
     pub pipeline: RenderPipeline, // todo: Move to renderer.
     pub depth_texture: Texture,
+    pub msaa_texture: Option<TextureView>, // MSAA Multisampled texture
     pub inputs_commanded: InputsCommanded,
     // staging_belt: wgpu::util::StagingBelt, // todo: Do we want this? Probably in sys, not here.
     pub scene: Scene,
     mesh_mappings: Vec<(i32, u32, u32)>,
     pub window: Arc<Window>,
-    msaa_texture: Option<TextureView>, // MSAA Multisampled texture
 }
 
 impl GraphicsState {
@@ -174,7 +174,7 @@ impl GraphicsState {
         result
     }
 
-    fn create_msaa_texture(
+    pub(crate) fn create_msaa_texture(
         device: &Device,
         surface_cfg: &SurfaceConfiguration,
         sample_count: u32,
