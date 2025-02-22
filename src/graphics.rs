@@ -60,8 +60,6 @@ pub(crate) struct GraphicsState {
     lighting_buf: Buffer,
     pub pipeline: RenderPipeline, // todo: Move to renderer.
     pub depth_texture: Texture,
-    // pub input_settings: InputSettings,
-    // pub ui_settings: UiSettings,
     pub inputs_commanded: InputsCommanded,
     // staging_belt: wgpu::util::StagingBelt, // todo: Do we want this? Probably in sys, not here.
     pub scene: Scene,
@@ -201,9 +199,10 @@ impl GraphicsState {
 
     pub(crate) fn handle_input(&mut self, event: DeviceEvent, input_settings: &InputSettings) {
         match input_settings.initial_controls {
-            ControlScheme::FreeCamera => input::add_input_cmd(event, &mut self.inputs_commanded),
-            // todo: Handle the others.
-            _ => (),
+            ControlScheme::FreeCamera | ControlScheme::Arc { center: _ } => {
+                input::add_input_cmd(event, &mut self.inputs_commanded)
+            }
+            _ => unimplemented!()
         }
     }
 
@@ -453,28 +452,33 @@ impl GraphicsState {
         // Note that camera settings adjusted by the application code are handled in
         // `update_camera`.
 
-        match input_settings.initial_controls {
-            ControlScheme::FreeCamera => {
-                if self.inputs_commanded.inputs_present() {
-                    let dt_secs = dt.as_secs() as f32 + dt.subsec_micros() as f32 / 1_000_000.;
+        if self.inputs_commanded.inputs_present() {
+            let dt_secs = dt.as_secs() as f32 + dt.subsec_micros() as f32 / 1_000_000.;
 
-                    let cam_changed = input::adjust_camera(
-                        &mut self.scene.camera,
-                        &self.inputs_commanded,
-                        &input_settings,
-                        dt_secs,
-                    );
+            let cam_changed = match input_settings.initial_controls {
+                ControlScheme::FreeCamera => input::adjust_camera_free(
+                    &mut self.scene.camera,
+                    &self.inputs_commanded,
+                    &input_settings,
+                    dt_secs,
+                ),
+                ControlScheme::Arc { center } => input::adjust_camera_arc(
+                    &mut self.scene.camera,
+                    &self.inputs_commanded,
+                    &input_settings,
+                    center,
+                    dt_secs,
+                ),
+                _ => unimplemented!()
+            };
 
-                    if cam_changed {
-                        self.update_camera(queue);
-                    }
-
-                    // Reset the mouse inputs; keyboard inputs are reset by their release event.
-                    self.inputs_commanded.mouse_delta_x = 0.;
-                    self.inputs_commanded.mouse_delta_y = 0.;
-                }
+            if cam_changed {
+                self.update_camera(queue);
             }
-            _ => (),
+
+            // Reset the mouse inputs; keyboard inputs are reset by their release event.
+            self.inputs_commanded.mouse_delta_x = 0.;
+            self.inputs_commanded.mouse_delta_y = 0.;
         }
 
         // We create a CommandEncoder to create the actual commands to send to the

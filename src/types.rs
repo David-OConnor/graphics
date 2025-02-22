@@ -284,7 +284,7 @@ impl Entity {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 /// Default controls. Provides easy defaults. For maximum flexibility, choose `None`,
 /// and implement controls in the `event_handler` function.
 pub enum ControlScheme {
@@ -297,9 +297,7 @@ pub enum ControlScheme {
     /// todo: Unimplemented
     Fps,
     /// The mouse rotates the camera around a fixed point.
-    /// todo: inner Vec of the point?
-    /// todo: Unimplemented
-    Arc,
+    Arc { center: Vec3 },
 }
 
 impl Default for ControlScheme {

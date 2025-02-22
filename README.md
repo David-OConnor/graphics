@@ -1,18 +1,14 @@
 # Graphics
-A 3D rendering engine for rust programs, with GUI integration 
+A 3D rendering engine for rust programs, with GUI integration
 
 [![Crate](https://img.shields.io/crates/v/graphics.svg)](https://crates.io/crates/graphics)
 [![Docs](https://docs.rs/graphics/badge.svg)](https://docs.rs/graphics)
 
-This library is a framework for building PC applications that have 3D graphics, and an
-EGUI user interface. It uses the WGPU toolkit, and Vulkan backend. It works on Windows, Linux, and Mac, but does not
-support web.
+This library is a framework for building PC applications that have 3D graphics, and a GUI. It uses the [WGPU toolkit](https://wgpu.rs/) with Vulkan backend, and [EGUI](https://docs.rs/egui/latest/egui/). It works on Windows, Linux, and Mac.
 
-This is intended as a general-purpose 3D visualization tool. Example use cases including wave-function viewing, n-body simulations, and protein structure visualization. It's also been used to visualize UAS attitude in preflight software.
+This is intended as a general-purpose 3D visualization tool. Example use cases including wave-function analysis, n-body simulations, and protein structure viewing. It's also been used to visualize UAS attitude in preflight software. Its goals are to be intuitive and flexible.
 
 ![Mol viewer screenshot](screenshots/mol_viewer_2025.png)
-
-It currently does not include practical documentation or usage examples.
 
 It includes built in FPS-style (Amplified for 6 DOF) camera controls. (WSAD + Space for up, C for down, Q and E for roll.
 Mouse for pitch and yaw). This can be overridden by the application with arbitrary controls. (See the `event_handler` parameter to
@@ -20,9 +16,9 @@ Mouse for pitch and yaw). This can be overridden by the application with arbitra
 
 It uses the [lin_alg](https://docs.rs/lin_alg/latest/lin_alg/f32/index.html) library for vector, matrix, and quaternion operations.
 
-![WF lab screenshot](screenshots/psi_lab_2024.png)
-
 You can enable the `app_utils` feature for utility functionality that is useful in applications that might use this library, but is not directly related to the GUI.
+
+![WF lab screenshot](screenshots/psi_lab_2024.png)
 
 Example boilerplate below. Calling `render(state)` starts an event loop. The application can interact with the engine through the `_handler` callbacks; each frame, each hardware event, or through the GUI. Each of these return an `EngineUpdates` struct, which determines if entities, meshes, lighting, or the camera needs to be refreshed.
 

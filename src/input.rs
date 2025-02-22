@@ -1,7 +1,7 @@
 //! Handles keyboard and mouse input, eg for moving the camera.
 
 use egui::Key;
-use lin_alg::f32::{Quaternion, Vec3};
+use lin_alg::f32::{Mat3, Quaternion, Vec3};
 // todo: remove Winit from this module if you can, and make it agnostic?
 use winit::event::{DeviceEvent, ElementState};
 use winit::{
@@ -146,7 +146,8 @@ pub(crate) fn add_input_cmd(event: DeviceEvent, inputs: &mut InputsCommanded) {
 }
 
 /// Adjust the camera orientation and position. Return if there was a change, so we know to update the buffer.
-pub fn adjust_camera(
+/// For the free (6DOF first-person) camera.
+pub fn adjust_camera_free(
     cam: &mut Camera,
     inputs: &InputsCommanded,
     input_settings: &InputSettings,
@@ -155,8 +156,6 @@ pub fn adjust_camera(
     let mut move_amt: f32 = input_settings.move_sens * dt;
     let rotate_amt: f32 = input_settings.rotate_sens * dt;
     let mut rotate_key_amt: f32 = input_settings.rotate_key_sens * dt;
-
-    // todo: This split is where you can decouple WGPU-specific code from general code.
 
     let mut cam_moved = false;
     let mut cam_rotated = false;
@@ -228,4 +227,75 @@ pub fn adjust_camera(
     }
 
     cam_moved || cam_rotated
+}
+
+/// Adjust the camera orientation and position. Return if there was a change, so we know to update the buffer.
+pub fn adjust_camera_arc(
+    cam: &mut Camera,
+    inputs: &InputsCommanded,
+    input_settings: &InputSettings,
+    center: Vec3,
+    dt: f32,
+) -> bool {
+    // How fast we rotate, derived from your input settings:
+    let rotate_amt: f32 = input_settings.rotate_sens * dt;
+    let eps = 0.000_01;
+
+    // Track if we actually moved/rotated:
+    let mut cam_rotated = false;
+
+    // Vector from `center` to current camera position:
+    let mut offset = cam.position - center;
+
+    // Only rotate if "free look" is active and the mouse moved enough:
+    if inputs.free_look && (inputs.mouse_delta_x.abs() > eps || inputs.mouse_delta_y.abs() > eps) {
+        // Typically, "yaw" around the global up axis:
+        let global_up = Vec3::new(0.0, 1.0, 0.0);
+        let yaw = Quaternion::from_axis_angle(global_up, -inputs.mouse_delta_x * rotate_amt);
+
+        // For "pitch," use a sideways axis, which is the cross of offset × up:
+        // (We normalize to avoid floating accumulation.)
+        let right_axis = offset.cross(global_up).to_normalized();
+        let pitch = Quaternion::from_axis_angle(right_axis, -inputs.mouse_delta_y * rotate_amt);
+
+        // Combined rotation for orbit:
+        let orbit_rotation = yaw * pitch;
+
+        // Apply rotation to the offset-from-center:
+        offset = orbit_rotation.rotate_vec(offset);
+
+        // Update the camera's position around the center:
+        cam.position = center + offset;
+
+        cam_rotated = true;
+    }
+
+    // Reorient the camera so it looks at `center`:
+    // 1) Forward is from camera to center.
+    let new_forward = (center - cam.position).to_normalized();
+
+    // 2) Use a desired "up" to help compute orientation basis.
+    //    Typically we pick a world up, then correct it in case we are near the pole.
+    let world_up = Vec3::new(0.0, 1.0, 0.0);
+
+    // 3) Right vector is forward × up
+    let new_right = new_forward.cross(world_up).to_normalized();
+    // 4) Corrected up is right × forward
+    let corrected_up = new_right.cross(new_forward).to_normalized();
+
+    // todo: I don't like this. From chatGPT. We shouldn't use a matrix.
+    // Convert these basis vectors into a rotation (orientation) for the camera.
+    // Note that some systems prefer forward = -Z; adjust as needed.
+    // For example, if your camera's local FWD is -Z, you can invert the forward axis below.
+
+
+    // let orientation_mat = Mat3::from_cols(new_right, corrected_up, -new_forward);
+    // cam.orientation = Quaternion::from_mat3(&orientation_mat);
+
+    // cam.orientation = Quaternion::from_unit_vecs(new_right, corrected_up);
+    // cam.orientation = Quaternion::from_unit_vecs(corrected_up, new_right);
+
+    cam.orientation = Quaternion::from_unit_vecs(UP_VEC, corrected_up);
+
+    cam_rotated
 }
