@@ -1,7 +1,7 @@
 use image::GenericImageView;
 use wgpu::{Device, Queue, TextureDescriptor, TextureFormat};
 
-use crate::system::{COLOR_FORMAT, DEPTH_FORMAT};
+use crate::system::DEPTH_FORMAT;
 
 pub struct Texture {
     pub texture: wgpu::Texture,
@@ -64,7 +64,6 @@ impl Texture {
         label: &str,
         is_normal_map: bool,
     ) -> Self {
-        // let img = image::load_from_memory(bytes)?;
         let img = image::load_from_memory(bytes).unwrap();
         Self::from_image(device, queue, &img, Some(label), is_normal_map)
     }
@@ -76,7 +75,6 @@ impl Texture {
         img: &image::DynamicImage,
         label: Option<&str>,
         is_normal_map: bool,
-        // ) -> Result<Self> {
     ) -> Self {
         let dimensions = img.dimensions();
         let rgba = img.to_rgba8();

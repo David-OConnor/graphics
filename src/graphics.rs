@@ -14,12 +14,12 @@ use std::{sync::Arc, time::Duration};
 use egui::Context;
 use lin_alg::f32::Vec3;
 use wgpu::{
-    self,
+    self, BindGroup, BindGroupLayout, BindingType, BlendComponent, BlendFactor, BlendOperation,
+    BlendState, Buffer, BufferBindingType, BufferUsages, CommandEncoder, CommandEncoderDescriptor,
+    Device, FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment,
+    RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration,
+    SurfaceTexture, TextureDescriptor, TextureView, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
-    BindGroup, BindGroupLayout, BindingType, Buffer, BufferBindingType, BufferUsages,
-    CommandEncoder, CommandEncoderDescriptor, Device, FragmentState, Queue, RenderPass,
-    RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp,
-    SurfaceConfiguration, SurfaceTexture, TextureDescriptor, TextureView, VertexState,
 };
 use winit::{event::DeviceEvent, window::Window};
 
@@ -27,7 +27,7 @@ use crate::{
     gui,
     gui::GuiState,
     input::{self, InputsCommanded},
-    system::{process_engine_updates, DEPTH_FORMAT},
+    system::{DEPTH_FORMAT, process_engine_updates},
     texture::Texture,
     types::{
         ControlScheme, EngineUpdates, InputSettings, Instance, Scene, UiLayout, UiSettings, Vertex,
@@ -67,7 +67,6 @@ pub(crate) struct GraphicsState {
     pub scene: Scene,
     mesh_mappings: Vec<(i32, u32, u32)>,
     pub window: Arc<Window>,
-    sample_count: u32,                 // MSAA
     msaa_texture: Option<TextureView>, // MSAA Multisampled texture
 }
 
@@ -77,6 +76,7 @@ impl GraphicsState {
         surface_cfg: &SurfaceConfiguration,
         mut scene: Scene,
         window: Arc<Window>,
+        msaa_samples: u32,
     ) -> Self {
         let vertex_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex buffer"),
@@ -109,11 +109,8 @@ impl GraphicsState {
 
         let bind_groups = create_bindgroups(device, &cam_buf, &lighting_buf);
 
-        // todo: Problem with EGUI here.
-        let msaa_sample_count = 1; // Enable 4x MSAA
-
         let depth_texture =
-            Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_sample_count);
+            Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_samples);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Graphics shader"),
@@ -132,7 +129,7 @@ impl GraphicsState {
             &pipeline_layout_graphics,
             shader,
             surface_cfg,
-            msaa_sample_count,
+            msaa_samples,
         );
 
         // We initialize instances, the instance buffer and mesh mappings in `setup_entities`.
@@ -150,12 +147,8 @@ impl GraphicsState {
         // let window_size = winit::dpi::LogicalSize::new(scene.window_size.0, scene.window_size.1);
         window.set_title(&scene.window_title);
 
-        let msaa_texture = if msaa_sample_count > 1 {
-            Some(Self::create_msaa_texture(
-                device,
-                surface_cfg,
-                msaa_sample_count,
-            ))
+        let msaa_texture = if msaa_samples > 1 {
+            Some(Self::create_msaa_texture(device, surface_cfg, msaa_samples))
         } else {
             None
         };
@@ -174,7 +167,6 @@ impl GraphicsState {
             inputs_commanded: Default::default(),
             mesh_mappings,
             window,
-            sample_count: msaa_sample_count,
             msaa_texture,
         };
 
@@ -457,10 +449,6 @@ impl GraphicsState {
         user_state: &mut T,
         layout: UiLayout,
     ) -> bool {
-        static mut i: usize = 0; // todo temp
-        unsafe {
-            i += 1;
-        }
         // Adjust camera inputs using the in-engine control scheme.
         // Note that camera settings adjusted by the application code are handled in
         // `update_camera`.
@@ -535,23 +523,8 @@ impl GraphicsState {
 
         process_engine_updates(&updates_gui, self, device, queue);
 
-        unsafe {
-            // if i % 100 == 0 {
-            // println!("\nA: {:?}", start_time.elapsed().as_micros());
-            // }
-        }
-
-        // let queue_len = queue.length;
-        // println!("QUEUE: {:?}", queue_len);
-
         // todo: This queue line is likely the problem! Is your queue just getting bigger??
         queue.submit(Some(encoder.finish()));
-
-        unsafe {
-            // if i % 100 == 0 {
-            // println!("C: {:?}", start_time.elapsed().as_micros());
-            // }
-        }
 
         surface_texture.present();
 
@@ -583,16 +556,16 @@ fn create_render_pipeline(
             // This configures with alpha blending. (?)
             targets: &[Some(wgpu::ColorTargetState {
                 format: config.format, // Ensure this is a format with alpha (e.g., `wgpu::TextureFormat::Rgba8Unorm`)
-                blend: Some(wgpu::BlendState {
-                    color: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::SrcAlpha,
-                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                        operation: wgpu::BlendOperation::Add,
+                blend: Some(BlendState {
+                    color: BlendComponent {
+                        src_factor: BlendFactor::SrcAlpha,
+                        dst_factor: BlendFactor::OneMinusSrcAlpha,
+                        operation: BlendOperation::Add,
                     },
-                    alpha: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::One,
-                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                        operation: wgpu::BlendOperation::Add,
+                    alpha: BlendComponent {
+                        src_factor: BlendFactor::One,
+                        dst_factor: BlendFactor::OneMinusSrcAlpha,
+                        operation: BlendOperation::Add,
                     },
                 }),
                 write_mask: wgpu::ColorWrites::ALL,

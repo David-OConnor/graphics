@@ -5,28 +5,26 @@
 // https://github.com/kaphula/winit-egui-wgpu-template/blob/master/src/main.rs
 
 use std::{
-    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
 
-use image::ImageError;
 use wgpu::{
-    Adapter, Backends, Buffer, Device, Features, Instance, InstanceDescriptor, PowerPreference,
-    Queue, Surface, SurfaceConfiguration, TextureFormat,
+    Adapter, Backends, Device, Features, Instance, InstanceDescriptor, PowerPreference, Queue,
+    Surface, SurfaceConfiguration, TextureFormat,
 };
 use winit::{
     dpi::PhysicalSize,
     event::{DeviceEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::{Icon, Window},
+    window::Window,
 };
 
 use crate::{
     graphics::GraphicsState,
     gui::GuiState,
     texture::Texture,
-    types::{EngineUpdates, InputSettings, Scene, UiLayout, UiSettings},
+    types::{EngineUpdates, GraphicsSettings, InputSettings, Scene, UiLayout, UiSettings},
 };
 
 pub const COLOR_FORMAT: TextureFormat = TextureFormat::Bgra8UnormSrgb;
@@ -63,6 +61,7 @@ where
     pub gui_handler: FGui,
     pub input_settings: InputSettings,
     pub ui_settings: UiSettings,
+    pub graphics_settings: GraphicsSettings,
     pub scene: Scene,
     pub last_render_time: Instant,
     pub dt: Duration,
@@ -81,6 +80,7 @@ where
         scene: Scene,
         input_settings: InputSettings,
         ui_settings: UiSettings,
+        graphics_settings: GraphicsSettings,
         user_state: T,
         render_handler: FRender,
         event_dev_handler: FEventDev,
@@ -108,6 +108,7 @@ where
             gui_handler,
             input_settings,
             ui_settings,
+            graphics_settings,
             scene,
             last_render_time,
             dt,
@@ -167,9 +168,15 @@ where
             // input_settings,
             // ui_settings,
             window.clone(),
+            self.graphics_settings.msaa_samples,
         );
 
-        self.gui = Some(GuiState::new(window, &render.device, texture_format));
+        self.gui = Some(GuiState::new(
+            window,
+            &render.device,
+            texture_format,
+            self.graphics_settings.msaa_samples,
+        ));
 
         self.render = Some(render);
         self.graphics = Some(graphics);
@@ -204,8 +211,12 @@ where
             graphics.scene.camera.aspect = eff_width / eff_height;
             graphics.scene.window_size = (new_size.width as f32, new_size.height as f32);
 
-            graphics.depth_texture =
-                Texture::create_depth_texture(&sys.device, &sys.surface_cfg, "Depth texture", 1); //todo temp HC to 4
+            graphics.depth_texture = Texture::create_depth_texture(
+                &sys.device,
+                &sys.surface_cfg,
+                "Depth texture",
+                self.graphics_settings.msaa_samples,
+            );
 
             graphics.scene.camera.update_proj_mat();
 
@@ -228,6 +239,7 @@ pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
     scene: Scene,
     input_settings: InputSettings,
     ui_settings: UiSettings,
+    graphics_settings: GraphicsSettings,
     render_handler: FRender,
     event_dev_handler: FEventDev,
     event_win_handler: FEventWin,
@@ -244,6 +256,7 @@ pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
         scene,
         input_settings,
         ui_settings,
+        graphics_settings,
         user_state,
         render_handler,
         event_dev_handler,

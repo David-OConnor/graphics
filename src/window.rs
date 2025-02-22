@@ -12,8 +12,8 @@ use winit::{
 };
 
 use crate::{
-    system::{process_engine_updates, State},
     EngineUpdates, Scene, UiLayout,
+    system::{State, process_engine_updates},
 };
 
 fn load_icon(path: &Path) -> Result<Icon, ImageError> {

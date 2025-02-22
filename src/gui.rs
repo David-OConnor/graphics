@@ -11,10 +11,10 @@ use wgpu::{self, CommandEncoder, Device, Queue, TextureFormat};
 use winit::window::Window;
 
 use crate::{
+    UiLayout,
     graphics::GraphicsState,
     system::DEPTH_FORMAT,
     types::{EngineUpdates, Scene},
-    UiLayout,
 };
 
 /// State related to the GUI.
@@ -28,7 +28,12 @@ pub(crate) struct GuiState {
 }
 
 impl GuiState {
-    pub fn new(window: Arc<Window>, device: &Device, texture_format: TextureFormat) -> Self {
+    pub fn new(
+        window: Arc<Window>,
+        device: &Device,
+        texture_format: TextureFormat,
+        msaa_samples: u32,
+    ) -> Self {
         let egui_context = Context::default();
         let egui_state = egui_winit::State::new(
             egui_context,
@@ -43,7 +48,7 @@ impl GuiState {
             device,
             texture_format,
             Some(DEPTH_FORMAT),
-            1,     // todo
+            msaa_samples,
             false, // todo: Dithering?
         );
 

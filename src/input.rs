@@ -15,8 +15,8 @@ use crate::{
     types::InputSettings,
 };
 
-const MOUSE_0_ID: u32 = 0;
-const MOUSE_1_ID: u32 = 1;
+const LEFT_CLICK: u32 = 0;
+const RIGHT_CLICK: u32 = 1;
 
 #[derive(Default, Debug)]
 pub struct InputsCommanded {
@@ -130,7 +130,7 @@ pub(crate) fn add_input_cmd(event: DeviceEvent, inputs: &mut InputsCommanded) {
             }
         }
         DeviceEvent::Button { button, state } => {
-            if button == MOUSE_0_ID {
+            if button == LEFT_CLICK {
                 inputs.free_look = match state {
                     ElementState::Pressed => true,
                     ElementState::Released => false,

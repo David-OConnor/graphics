@@ -15,7 +15,7 @@ mod window;
 
 pub use camera::Camera;
 pub use graphics::{FWD_VEC, RIGHT_VEC, UP_VEC};
-pub use input::{adjust_camera, InputsCommanded};
+pub use input::{InputsCommanded, adjust_camera};
 pub use lighting::{LightType, Lighting, PointLight};
 pub use system::run;
 pub use types::{

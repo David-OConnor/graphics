@@ -19,8 +19,7 @@ pub const VERTEX_SIZE: usize = 14 * F32_SIZE;
 pub const INSTANCE_SIZE: usize = MAT4_SIZE + MAT3_SIZE + VEC4_SIZE + F32_SIZE;
 
 #[derive(Clone, Copy, Debug)]
-/// Example attributes: https://github.com/bevyengine/bevy/blob/main/crates/bevy_render/src/mesh/mesh/mod.rs#L56
-/// // todo: Vec3 vs arrays?
+/// A general mesh. This should be sufficiently versatile to use for a number of purposes.
 pub struct Vertex {
     /// Where the vertex is located in space
     pub position: [f32; 3],
@@ -246,6 +245,7 @@ pub struct Mesh {
 /// Represents an entity in the world. This is not fundamental to the WGPU system.
 #[derive(Clone, Debug)]
 pub struct Entity {
+    pub id: usize,
     /// Index of the mesh this entity references. (or perhaps its index?)
     pub mesh: usize,
     /// Position in the world, relative to world origin
@@ -271,6 +271,7 @@ impl Entity {
         shinyness: f32,
     ) -> Self {
         Self {
+            id: 0, // todo: Determine how you'll handle this.
             mesh,
             position,
             orientation,
@@ -392,6 +393,17 @@ impl Default for InputSettings {
             rotate_key_sens: 1.0,
             run_factor: 5.,
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct GraphicsSettings {
+    pub msaa_samples: u32,
+}
+
+impl Default for GraphicsSettings {
+    fn default() -> Self {
+        Self { msaa_samples: 4 }
     }
 }
 
