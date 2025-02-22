@@ -10,7 +10,7 @@ support web.
 
 This is intended as a general-purpose 3D visualization tool. Example use cases including wave-function viewing, n-body simulations, and protein structure visualization. It's also been used to visualize UAS attitude in preflight software.
 
-![WF lab screenshot](screenshots/psi_lab_2024.png)
+![Mol viewer screenshot](screenshots/mol_viewer_2025.png)
 
 It currently does not include practical documentation or usage examples.
 
@@ -19,6 +19,8 @@ Mouse for pitch and yaw). This can be overridden by the application with arbitra
 `graphics::run()`)
 
 It uses the [lin_alg](https://docs.rs/lin_alg/latest/lin_alg/f32/index.html) library for vector, matrix, and quaternion operations.
+
+![WF lab screenshot](screenshots/psi_lab_2024.png)
 
 You can enable the `app_utils` feature for utility functionality that is useful in applications that might use this library, but is not directly related to the GUI.
 
@@ -31,7 +33,7 @@ use std::f32::consts::TAU;
 
 use graphics::{
     Camera, ControlScheme, DeviceEvent, EngineUpdates, Entity, InputSettings, LightType, Lighting,
-    Mesh, PointLight, Scene, UiLayout, UiSettings, RIGHT_VEC, UP_VEC
+    Mesh, PointLight, Scene, UiLayout, UiSettings, GraphicsSettings, RIGHT_VEC, UP_VEC
 };
 use egui::{Context, Slider, TopBottomPanel};
 
@@ -289,6 +291,7 @@ pub fn render(state: State) {
         scene,
         input_settings,
         ui_settings,
+        GraphicsSettings::default(),
         render_handler,
         event_dev_handler,
         event_win_handler,
