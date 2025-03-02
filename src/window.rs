@@ -265,8 +265,6 @@ where
             );
 
             process_engine_updates(&updates_event, graphics, &render.device, &render.queue);
-
-
         }
     }
 

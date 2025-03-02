@@ -11,6 +11,9 @@ struct PointLight {
     specular_color: vec4<f32>,
     diffuse_intensity: f32,
     specular_intensity: f32,
+    directional: u32, // Boolean
+    direction: vec3<f32>,
+    fov: f32,
 }
 
 // Note: Don't us vec3 in uniforms due to alignment issues.
@@ -178,9 +181,6 @@ fn fs_main(vertex: VertexOut) -> @location(0) vec4<f32> {
     var diffuse = vec4<f32>(0., 0., 0., 0.);
     var specular = vec4<f32>(0., 0., 0., 0.);
 
-    // todo: arrayLength on this variable is not working. Use size passed from CPU in the
-    // todo meanwhile.
-//    let num_lights = arrayLength(&lighting.point_lights);
     for (var i=0; i < lighting.lights_len; i++) {
         var light = lighting.point_lights[i];
 
@@ -195,8 +195,22 @@ fn fs_main(vertex: VertexOut) -> @location(0) vec4<f32> {
         let k2 = 0.032; // Quadratic attenuation term
         var dist_attenuation = 1.0 / (1.0 + k1 * length(light_to_vert_diff) + k2 * pow(length(light_to_vert_diff), 2.0));
 
+
         // Diffuse lighting. This is essentially cosine los.
         var diffuse_attenuation = max(dot(vertex.normal, -light_to_vert_dir), 0.);
+
+        // For directional lights, don't attenuate further if the vertex is inside the light's
+        // FOV. If outside, gradually attentuate to 0.
+        if light.directional != 0u {
+            let light_dir = normalize(light.direction); // Ideally handled upstream.
+            // todo: This likely not handle opposite direction correctly.(?)
+            // e.g. the vector from the camera to the fragment.
+            let angle_diff = acos(dot(-light_dir, normalize(vertex.world_posit.xyz - camera.position.xyz)));
+            if (angle_diff > light.fov/2.) {
+                diffuse_attenuation = 0.0;
+            }
+        }
+
         diffuse += light.diffuse_color * diffuse_attenuation * light.diffuse_intensity * dist_attenuation;
 
         // Specular lighting.

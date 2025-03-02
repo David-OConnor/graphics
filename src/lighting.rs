@@ -1,14 +1,15 @@
 use lin_alg::f32::Vec3;
 
-use crate::types::{F32_SIZE, VEC3_UNIFORM_SIZE};
+use crate::types::{F32_SIZE, VEC3_SIZE, VEC3_UNIFORM_SIZE};
 
 // The extra 4 is due to uniform (and storage) buffers needing ton be a multiple of 16 in size.
 // This is for the non-array portion of the lighting uniform.
 // The extra 12 is for padding.
 pub const LIGHTING_SIZE_FIXED: usize = VEC3_UNIFORM_SIZE + F32_SIZE + 4 + 8;
 
-// The extra 8 here for the same reason.
-pub const POINT_LIGHT_SIZE: usize = 3 * VEC3_UNIFORM_SIZE + 2 * F32_SIZE + 8;
+// The extra 4 pad here for the same reason.
+// pub const POINT_LIGHT_SIZE: usize = 3 * VEC3_UNIFORM_SIZE + 2 * F32_SIZE + 8;
+pub const POINT_LIGHT_SIZE: usize = 3 * VEC3_UNIFORM_SIZE + 4 * F32_SIZE + VEC3_SIZE + 4;
 
 // Note: These array-to-bytes functions may have broader use than in this lighting module.
 
@@ -67,10 +68,6 @@ impl Lighting {
         buf_fixed_size[VEC3_UNIFORM_SIZE + F32_SIZE..VEC3_UNIFORM_SIZE + F32_SIZE + 4]
             .clone_from_slice(&(self.point_lights.len() as i32).to_le_bytes());
 
-        // Pad to a multiple of 16.
-        buf_fixed_size[VEC3_UNIFORM_SIZE + F32_SIZE + 4..LIGHTING_SIZE_FIXED]
-            .clone_from_slice(&[0; 8]);
-
         for byte in buf_fixed_size.into_iter() {
             result.push(byte);
         }
@@ -88,7 +85,7 @@ impl Lighting {
 #[derive(Debug, Clone)]
 pub enum LightType {
     Omnidirectional,
-    Directional(Vec3), // direction pointed at // todo: FOV?
+    Directional { direction: Vec3, fov: f32 }, // direction pointed at // todo: FOV?
     Diffuse,
 }
 
@@ -101,8 +98,6 @@ pub struct PointLight {
     pub specular_color: [f32; 4],
     pub diffuse_intensity: f32,
     pub specular_intensity: f32,
-    // todo: FOV, and direction?
-    // shadow_map
 }
 
 impl Default for PointLight {
@@ -123,22 +118,34 @@ impl PointLight {
     pub fn to_bytes(&self) -> [u8; POINT_LIGHT_SIZE] {
         let mut result = [0; POINT_LIGHT_SIZE];
 
+        let mut i = 0;
+
         // 16 is vec3 size in bytes, including padding.
         result[0..VEC3_UNIFORM_SIZE].clone_from_slice(&self.position.to_bytes_uniform());
+        i += VEC3_UNIFORM_SIZE;
 
-        result[VEC3_UNIFORM_SIZE..2 * VEC3_UNIFORM_SIZE]
-            .clone_from_slice(&array4_to_bytes(self.diffuse_color));
+        result[i..i + VEC3_UNIFORM_SIZE].clone_from_slice(&array4_to_bytes(self.diffuse_color));
+        i += VEC3_UNIFORM_SIZE;
 
-        result[2 * VEC3_UNIFORM_SIZE..3 * VEC3_UNIFORM_SIZE]
-            .clone_from_slice(&array4_to_bytes(self.specular_color));
+        result[i..i + VEC3_UNIFORM_SIZE].clone_from_slice(&array4_to_bytes(self.specular_color));
+        i += VEC3_UNIFORM_SIZE;
 
-        result[3 * VEC3_UNIFORM_SIZE..3 * VEC3_UNIFORM_SIZE + F32_SIZE]
-            .clone_from_slice(&self.diffuse_intensity.to_ne_bytes());
+        result[i..i + F32_SIZE].clone_from_slice(&self.diffuse_intensity.to_ne_bytes());
+        i += F32_SIZE;
 
-        result[3 * VEC3_UNIFORM_SIZE + F32_SIZE..3 * VEC3_UNIFORM_SIZE + 2 * F32_SIZE]
-            .clone_from_slice(&self.specular_intensity.to_ne_bytes());
+        result[i..i + F32_SIZE].clone_from_slice(&self.specular_intensity.to_ne_bytes());
+        i += F32_SIZE;
 
-        result[3 * VEC3_UNIFORM_SIZE + 2 * F32_SIZE..POINT_LIGHT_SIZE].clone_from_slice(&[0; 8]);
+        if let LightType::Directional { direction, fov } = &self.type_ {
+            result[i] = 1;
+            i += F32_SIZE; // u32
+
+            result[i..i + VEC3_SIZE].clone_from_slice(&direction.to_bytes_vertex());
+            i += VEC3_SIZE;
+
+            result[i..i + F32_SIZE].clone_from_slice(&fov.to_ne_bytes());
+            i += F32_SIZE;
+        }
 
         result
     }

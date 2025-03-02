@@ -47,8 +47,8 @@ impl InputsCommanded {
             || self.down
             || self.roll_ccw
             || self.roll_cw
-            || self.mouse_delta_x.abs() > EPS && self.free_look
-            || self.mouse_delta_y.abs() > EPS && self.free_look
+            || self.mouse_delta_x.abs() > EPS
+            || self.mouse_delta_y.abs() > EPS
     }
 }
 
