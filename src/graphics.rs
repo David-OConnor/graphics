@@ -197,10 +197,10 @@ impl GraphicsState {
         msaa_texture.create_view(&wgpu::TextureViewDescriptor::default())
     }
 
-    pub(crate) fn handle_input(&mut self, event: DeviceEvent, input_settings: &InputSettings) {
+    pub(crate) fn handle_input(&mut self, event: &DeviceEvent, input_settings: &InputSettings) {
         match input_settings.initial_controls {
             ControlScheme::FreeCamera | ControlScheme::Arc { center: _ } => {
-                input::add_input_cmd(event, &mut self.inputs_commanded)
+                input::add_input_cmd(&event, &mut self.inputs_commanded)
             }
             _ => unimplemented!(),
         }

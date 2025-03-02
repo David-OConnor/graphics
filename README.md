@@ -55,6 +55,7 @@ fn event_dev_handler(
     state_: &mut State,
     event: DeviceEvent,
     scene: &mut Scene,
+    _engine_inputs: bool,
     _dt: f32,
 ) -> EngineUpdates {
     match event {

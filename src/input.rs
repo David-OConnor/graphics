@@ -47,15 +47,15 @@ impl InputsCommanded {
             || self.down
             || self.roll_ccw
             || self.roll_cw
-            || self.mouse_delta_x.abs() > EPS
-            || self.mouse_delta_y.abs() > EPS
+            || self.mouse_delta_x.abs() > EPS && self.free_look
+            || self.mouse_delta_y.abs() > EPS && self.free_look
     }
 }
 
 /// Modifies the commanded inputs in place; triggered by a single input event.
 /// dt is in seconds.
 /// pub(crate) fn handle_event(event: DeviceEvent, cam: &mut Camera, input_settings: &InputSettings, dt: f32) {
-pub(crate) fn add_input_cmd(event: DeviceEvent, inputs: &mut InputsCommanded) {
+pub(crate) fn add_input_cmd(event: &DeviceEvent, inputs: &mut InputsCommanded) {
     match event {
         DeviceEvent::Key(key) => {
             if key.state == ElementState::Pressed {
@@ -130,7 +130,7 @@ pub(crate) fn add_input_cmd(event: DeviceEvent, inputs: &mut InputsCommanded) {
             }
         }
         DeviceEvent::Button { button, state } => {
-            if button == LEFT_CLICK {
+            if *button == LEFT_CLICK {
                 inputs.free_look = match state {
                     ElementState::Pressed => true,
                     ElementState::Released => false,

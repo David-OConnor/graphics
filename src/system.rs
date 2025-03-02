@@ -44,7 +44,7 @@ pub(crate) struct RenderState {
 pub struct State<T: 'static, FRender, FEventDev, FEventWin, FGui>
 where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
-    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, bool, f32) -> EngineUpdates + 'static,
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {
@@ -70,7 +70,7 @@ where
 impl<T: 'static, FRender, FEventDev, FEventWin, FGui> State<T, FRender, FEventDev, FEventWin, FGui>
 where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
-    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, bool, f32) -> EngineUpdates + 'static,
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {
@@ -240,7 +240,8 @@ where
 ///
 /// `user_state` is arbitrary application state, to maintain ownership of.
 /// `render_handler` allows application code to run each frame.
-/// `event_handler` allows application code to handle device events, such as user input.
+/// `event_dev_handler` allows application code to handle device events, such as user input.
+/// `event_win_handler` allows application code to window events.
 /// `gui_handler` is where the EGUI code is written to describe the UI.
 pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
     user_state: T,
@@ -254,7 +255,7 @@ pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
     gui_handler: FGui,
 ) where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
-    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, bool, f32) -> EngineUpdates + 'static,
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {

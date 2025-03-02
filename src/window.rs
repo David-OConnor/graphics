@@ -29,7 +29,7 @@ fn load_icon(path: &Path) -> Result<Icon, ImageError> {
 impl<T, FRender, FEventDev, FEventWin, FGui> State<T, FRender, FEventDev, FEventWin, FGui>
 where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
-    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, bool, f32) -> EngineUpdates + 'static,
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {
@@ -99,7 +99,7 @@ impl<T, FRender, FEventDev, FEventWin, FGui> ApplicationHandler
     for State<T, FRender, FEventDev, FEventWin, FGui>
 where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
-    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, bool, f32) -> EngineUpdates + 'static,
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {
@@ -253,16 +253,20 @@ where
         if !gui.mouse_in_gui {
             let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;
 
+            graphics.handle_input(&event, &self.input_settings);
+            let inputs_present = graphics.inputs_commanded.inputs_present();
+
             let updates_event = (self.event_dev_handler)(
                 &mut self.user_state,
-                event.clone(),
+                event,
                 &mut graphics.scene,
+                inputs_present,
                 dt_secs,
             );
 
             process_engine_updates(&updates_event, graphics, &render.device, &render.queue);
 
-            graphics.handle_input(event, &self.input_settings);
+
         }
     }
 
