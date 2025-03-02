@@ -1,6 +1,7 @@
 //! https://sotrh.github.io/learn-wgpu/beginner/tutorial9-models/#rendering-a-mesh
 
 use lin_alg::f32::{Mat4, Quaternion, Vec3, Vec4};
+use wgpu::{VertexAttribute, VertexFormat};
 
 use crate::{camera::Camera, lighting::Lighting};
 
@@ -77,34 +78,34 @@ impl Vertex {
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 // Vertex position
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: 0,
                     shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: VertexFormat::Float32x3,
                 },
                 // Texture coordinates
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: VEC3_SIZE as wgpu::BufferAddress,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
+                    format: VertexFormat::Float32x2,
                 },
                 // Normal vector
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: (2 * F32_SIZE + VEC3_SIZE) as wgpu::BufferAddress,
                     shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: VertexFormat::Float32x3,
                 },
                 // Tangent (Used to align textures)
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: (2 * F32_SIZE + 2 * VEC3_SIZE) as wgpu::BufferAddress,
                     shader_location: 3,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: VertexFormat::Float32x3,
                 },
                 // Bitangent (Used to align textures)
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: (2 * F32_SIZE + 3 * VEC3_SIZE) as wgpu::BufferAddress,
                     shader_location: 4,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: VertexFormat::Float32x3,
                 },
             ],
         }
@@ -142,64 +143,64 @@ impl Instance {
                 // the shader.
 
                 // Model matrix, col 0
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: 0,
                     shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: VertexFormat::Float32x4,
                 },
                 // Model matrix, col 1
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: (F32_SIZE * 4) as wgpu::BufferAddress,
                     shader_location: 6,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: VertexFormat::Float32x4,
                 },
                 // Model matrix, col 2
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: (F32_SIZE * 8) as wgpu::BufferAddress,
                     shader_location: 7,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: VertexFormat::Float32x4,
                 },
                 // Model matrix, col 3
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: (F32_SIZE * 12) as wgpu::BufferAddress,
                     shader_location: 8,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: VertexFormat::Float32x4,
                 },
                 // Normal matrix, col 0
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: (MAT4_SIZE) as wgpu::BufferAddress,
                     shader_location: 9,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: VertexFormat::Float32x3,
                 },
                 // Normal matrix, col 1
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: (MAT4_SIZE + VEC3_SIZE) as wgpu::BufferAddress,
                     shader_location: 10,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: VertexFormat::Float32x3,
                 },
                 // Normal matrix, col 2
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: (MAT4_SIZE + VEC3_SIZE * 2) as wgpu::BufferAddress,
                     shader_location: 11,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: VertexFormat::Float32x3,
                 },
                 // model (and vertex) color
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: (MAT4_SIZE + MAT3_SIZE) as wgpu::BufferAddress,
                     shader_location: 12,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: VertexFormat::Float32x4,
                 },
                 // Shinyness
-                wgpu::VertexAttribute {
+                VertexAttribute {
                     offset: (MAT4_SIZE + MAT3_SIZE + VEC4_SIZE) as wgpu::BufferAddress,
                     shader_location: 13,
-                    format: wgpu::VertexFormat::Float32,
+                    format: VertexFormat::Float32,
                 },
             ],
         }
     }
 
-    /// Converts to a model matrix
+    /// Converts to a model matrix to a byte array, for passing to the GPU.
     pub fn to_bytes(&self) -> [u8; INSTANCE_SIZE] {
         let mut result = [0; INSTANCE_SIZE];
 
@@ -259,6 +260,22 @@ pub struct Entity {
     pub color: (f32, f32, f32),
     pub opacity: f32,
     pub shinyness: f32, // 0 to 1.
+}
+
+impl Default for Entity {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            mesh: 0,
+            position: Vec3::new_zero(),
+            orientation: Quaternion::new_identity(),
+            scale: 1.,
+            scale_partial: None,
+            color: (1., 1., 1.),
+            opacity: 1.,
+            shinyness: 0.,
+        }
+    }
 }
 
 impl Entity {

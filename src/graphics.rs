@@ -202,7 +202,7 @@ impl GraphicsState {
             ControlScheme::FreeCamera | ControlScheme::Arc { center: _ } => {
                 input::add_input_cmd(event, &mut self.inputs_commanded)
             }
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 
@@ -276,7 +276,6 @@ impl GraphicsState {
                     // todo: entity into method?
                     position: entity.position,
                     orientation: entity.orientation,
-                    // scale: entity.scale,
                     scale,
                     color: Vec3::new(entity.color.0, entity.color.1, entity.color.2),
                     opacity: entity.opacity,
@@ -469,7 +468,7 @@ impl GraphicsState {
                     center,
                     dt_secs,
                 ),
-                _ => unimplemented!()
+                _ => unimplemented!(),
             };
 
             if cam_changed {

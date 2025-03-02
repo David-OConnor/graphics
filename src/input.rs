@@ -288,7 +288,6 @@ pub fn adjust_camera_arc(
     // Note that some systems prefer forward = -Z; adjust as needed.
     // For example, if your camera's local FWD is -Z, you can invert the forward axis below.
 
-
     // let orientation_mat = Mat3::from_cols(new_right, corrected_up, -new_forward);
     // cam.orientation = Quaternion::from_mat3(&orientation_mat);
 
