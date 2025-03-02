@@ -233,7 +233,7 @@ fn draw_entities(entities: &mut Vec<Entity>, snapshots: &[Snapshot]) {
 pub fn render(state: State) {
     let mut scene = Scene {
         meshes: vec![
-            Mesh::new_sphere(1., 12, 12),
+            Mesh::new_sphere(1., 3),
             Mesh::from_obj_file("sphere.obj"),
         ],
         entities: Vec::new(), // updated below.

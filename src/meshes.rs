@@ -1,6 +1,7 @@
 //! This module generates meshes
 
 use std::{
+    collections::HashMap,
     f32::consts::TAU,
     fs::File,
     io::{BufReader, Read},
@@ -160,10 +161,122 @@ impl Mesh {
         }
     }
 
-    /// Create a (normalized cube) sphere mesh. A higher div count results in a smoother sphere.
-    /// https://medium.com/@oscarsc/four-ways-to-create-a-mesh-for-a-sphere-d7956b825db4
-    /// todo: Temporarily, a uv_sphere while we figure out how to make better ones.
-    pub fn new_sphere(radius: f32, num_lats: usize, num_lons: usize) -> Self {
+    /// Creates an isosphere, from subdividing an icosahedron. 2-3 subdivisions works well for most uses.
+    pub fn new_sphere(radius: f32, mut subdivisions: u32) -> Self {
+        if subdivisions > 4 {
+            println!(
+                "Warning: Sphere subdivisions > 4 is not allowed due to extreme performance cost. Setting to 4."
+            );
+            subdivisions = 4;
+        }
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        // Create the initial icosahedron.
+        // 't' is the golden ratio.
+        let t = (1.0 + 5.0_f32.sqrt()) / 2.0;
+
+        let mut initial_points = vec![
+            Vec3::new(-1.0, t, 0.0),
+            Vec3::new(1.0, t, 0.0),
+            Vec3::new(-1.0, -t, 0.0),
+            Vec3::new(1.0, -t, 0.0),
+            Vec3::new(0.0, -1.0, t),
+            Vec3::new(0.0, 1.0, t),
+            Vec3::new(0.0, -1.0, -t),
+            Vec3::new(0.0, 1.0, -t),
+            Vec3::new(t, 0.0, -1.0),
+            Vec3::new(t, 0.0, 1.0),
+            Vec3::new(-t, 0.0, -1.0),
+            Vec3::new(-t, 0.0, 1.0),
+        ];
+
+        // Normalize each vertex to lie on the sphere and scale by the radius.
+        for point in &mut initial_points {
+            *point = point.to_normalized() * radius;
+            vertices.push(Vertex::new(point.to_arr(), point.to_normalized()));
+        }
+
+        // The 20 faces of the icosahedron defined as triangles (each index refers to a vertex).
+        let mut faces = vec![
+            [0, 11, 5],
+            [0, 5, 1],
+            [0, 1, 7],
+            [0, 7, 10],
+            [0, 10, 11],
+            [1, 5, 9],
+            [5, 11, 4],
+            [11, 10, 2],
+            [10, 7, 6],
+            [7, 1, 8],
+            [3, 9, 4],
+            [3, 4, 2],
+            [3, 2, 6],
+            [3, 6, 8],
+            [3, 8, 9],
+            [4, 9, 5],
+            [2, 4, 11],
+            [6, 2, 10],
+            [8, 6, 7],
+            [9, 8, 1],
+        ];
+
+        // Cache to avoid duplicating vertices at the midpoints.
+        let mut middle_point_cache = HashMap::<(usize, usize), usize>::new();
+
+        // Helper closure to get the midpoint between two vertices.
+        // The midpoint is computed, normalized to the sphere and added to the vertex list.
+        let mut get_middle_point = |a: usize, b: usize| -> usize {
+            let key = if a < b { (a, b) } else { (b, a) };
+            if let Some(&index) = middle_point_cache.get(&key) {
+                return index;
+            }
+            let point_a = Vec3::from_slice(&vertices[a].position).unwrap();
+            let point_b = Vec3::from_slice(&vertices[b].position).unwrap();
+            let middle = (point_a + point_b) * 0.5;
+            let normalized = middle.to_normalized() * radius;
+            let index = vertices.len();
+            vertices.push(Vertex::new(normalized.to_arr(), normalized.to_normalized()));
+            middle_point_cache.insert(key, index);
+            index
+        };
+
+        // Subdivide each triangular face.
+        // For each subdivision iteration, every triangle is split into 4 smaller ones.
+        for _ in 0..subdivisions {
+            let mut new_faces = Vec::new();
+            for tri in &faces {
+                let a = tri[0];
+                let b = tri[1];
+                let c = tri[2];
+
+                let ab = get_middle_point(a, b);
+                let bc = get_middle_point(b, c);
+                let ca = get_middle_point(c, a);
+
+                new_faces.push([a, ca, ab]);
+                new_faces.push([b, ab, bc]);
+                new_faces.push([c, bc, ca]);
+                new_faces.push([ab, ca, bc]);
+            }
+            faces = new_faces;
+        }
+
+        // Flatten the faces into the indices vector.
+        for face in faces {
+            indices.extend_from_slice(&face);
+        }
+
+        Self {
+            vertices,
+            indices,
+            material: 0,
+        }
+    }
+
+    /// Create a UV sphere mesh. A higher number of latitudes and longitudes results in a
+    /// a smoother sphere.
+    pub fn new_sphere_uv(radius: f32, num_lats: usize, num_lons: usize) -> Self {
         let mut vertices = Vec::new();
         // We use faces to construct indices (triangles)
         let mut faces = Vec::new();
