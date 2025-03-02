@@ -105,6 +105,19 @@ pub struct PointLight {
     // shadow_map
 }
 
+impl Default for PointLight {
+    fn default() -> Self {
+        Self {
+            type_: LightType::Omnidirectional,
+            position: Vec3::new_zero(),
+            diffuse_color: [1., 1., 1., 0.5],
+            specular_color: [1., 1., 1., 0.5],
+            diffuse_intensity: 100.,
+            specular_intensity: 100.,
+        }
+    }
+}
+
 impl PointLight {
     /// todo: assumes point source for now; ignore type_ field.
     pub fn to_bytes(&self) -> [u8; POINT_LIGHT_SIZE] {
