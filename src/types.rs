@@ -303,7 +303,6 @@ impl Entity {
     }
 }
 
-#[cfg(feature = "app_utils")]
 #[cfg_attr(feature = "app_utils", derive(Encode, Decode))]
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 /// Default controls. Provides easy defaults. For maximum flexibility, choose `None`,
