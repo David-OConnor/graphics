@@ -59,7 +59,6 @@ where
     pub event_dev_handler: FEventDev,
     pub event_win_handler: FEventWin,
     pub gui_handler: FGui,
-    pub input_settings: InputSettings,
     pub ui_settings: UiSettings,
     pub graphics_settings: GraphicsSettings,
     pub scene: Scene,
@@ -78,7 +77,6 @@ where
     /// parts later, once the window has been set up.
     pub(crate) fn new(
         scene: Scene,
-        input_settings: InputSettings,
         ui_settings: UiSettings,
         graphics_settings: GraphicsSettings,
         user_state: T,
@@ -106,7 +104,6 @@ where
             event_dev_handler,
             event_win_handler,
             gui_handler,
-            input_settings,
             ui_settings,
             graphics_settings,
             scene,
@@ -117,7 +114,6 @@ where
 
     /// Initializes the renderer and GUI. We launch this from the Window's event loop.
     pub(crate) fn init(&mut self, window: Window) {
-        println!("Initializing graphics and sys...");
         let window = Arc::new(window);
 
         let size = window.inner_size();
@@ -246,7 +242,6 @@ where
 pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
     user_state: T,
     scene: Scene,
-    input_settings: InputSettings,
     ui_settings: UiSettings,
     graphics_settings: GraphicsSettings,
     render_handler: FRender,
@@ -263,7 +258,6 @@ pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
 
     let mut state: State<T, FRender, FEventDev, FEventWin, FGui> = State::new(
         scene,
-        input_settings,
         ui_settings,
         graphics_settings,
         user_state,

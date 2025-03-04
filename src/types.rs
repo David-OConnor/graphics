@@ -1,5 +1,8 @@
 //! https://sotrh.github.io/learn-wgpu/beginner/tutorial9-models/#rendering-a-mesh
 
+#[cfg(feature = "app_utils")]
+use bincode::{Decode, Encode};
+
 use lin_alg::f32::{Mat4, Quaternion, Vec3, Vec4};
 use wgpu::{VertexAttribute, VertexFormat};
 
@@ -301,12 +304,15 @@ impl Entity {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[cfg(feature = "app_utils")]
+#[cfg_attr(feature = "app_utils", derive(Encode, Decode))]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
 /// Default controls. Provides easy defaults. For maximum flexibility, choose `None`,
 /// and implement controls in the `event_handler` function.
 pub enum ControlScheme {
     /// No controls; provide all controls in application code.
     None,
+    #[default]
     /// Keyboard controls for movement along 3 axis, and rotation around the Z axis. Mouse
     /// for rotation around the X and Y axes. Shift to multiply speed of keyboard controls.
     FreeCamera,
@@ -317,21 +323,17 @@ pub enum ControlScheme {
     Arc { center: Vec3 },
 }
 
-impl Default for ControlScheme {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct Scene {
     pub meshes: Vec<Mesh>,
     pub entities: Vec<Entity>,
     pub camera: Camera,
     pub lighting: Lighting,
+    pub input_settings: InputSettings,
     pub background_color: (f32, f32, f32),
     pub window_title: String,
     pub window_size: (f32, f32),
+
 }
 
 impl Default for Scene {
@@ -341,6 +343,7 @@ impl Default for Scene {
             entities: Vec::new(),
             camera: Default::default(),
             lighting: Default::default(),
+            input_settings: Default::default(),
             // todo: Consider a separate window struct.
             background_color: (0.7, 0.7, 0.7),
             window_title: "(Window title here)".to_owned(),
@@ -396,13 +399,13 @@ pub struct InputSettings {
     pub rotate_key_sens: f32,
     /// How much the move speed is multiplied when holding the run key.
     pub run_factor: f32,
-    pub initial_controls: ControlScheme,
+    pub control_scheme: ControlScheme,
 }
 
 impl Default for InputSettings {
     fn default() -> Self {
         Self {
-            initial_controls: Default::default(),
+            control_scheme: Default::default(),
             move_sens: 1.5,
             rotate_sens: 0.45,
             rotate_key_sens: 1.0,
@@ -447,7 +450,12 @@ impl Default for UiSettings {
 }
 
 /// This struct is exposed in the API, and passed by callers to indicate in the render,
-/// event, GUI etc update functions, if the engine should update various things.
+/// event, GUI etc update functions, if the engine should update various things. When you change
+/// the relevant part of the scene, the callbacks (event, etc) should set the corresponding
+/// flag in this struct.
+///
+/// This process is required so certain internal structures like camera buffers, lighting buffers
+/// etc are only computed and changed when necessary.
 #[derive(Default)]
 pub struct EngineUpdates {
     pub meshes: bool,

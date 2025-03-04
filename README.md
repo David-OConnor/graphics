@@ -260,15 +260,15 @@ pub fn render(state: State) {
                 },
             ],
         },
+        input_settings: InputSettings {
+            control_scheme: ControlScheme::FreeCamera,
+            ..Default::default()
+        },
         background_color: BACKGROUND_COLOR,
         window_size: (WINDOW_SIZE_X, WINDOW_SIZE_Y),
         window_title: WINDOW_TITLE.to_owned(),
     };
 
-    let input_settings = InputSettings {
-        initial_controls: ControlScheme::FreeCamera,
-        ..Default::default()
-    };
     let ui_settings = UiSettings {
         layout: UiLayout::Top,
         icon_path: Some("./resources/icon.png".to_owned()),
@@ -287,7 +287,6 @@ pub fn render(state: State) {
     graphics::run(
         state,
         scene,
-        input_settings,
         ui_settings,
         GraphicsSettings::default(),
         render_handler,

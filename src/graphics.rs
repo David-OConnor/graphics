@@ -198,7 +198,7 @@ impl GraphicsState {
     }
 
     pub(crate) fn handle_input(&mut self, event: &DeviceEvent, input_settings: &InputSettings) {
-        match input_settings.initial_controls {
+        match input_settings.control_scheme {
             ControlScheme::FreeCamera | ControlScheme::Arc { center: _ } => {
                 input::add_input_cmd(&event, &mut self.inputs_commanded)
             }
@@ -442,7 +442,7 @@ impl GraphicsState {
         width: u32,
         height: u32,
         ui_settings: &mut UiSettings,
-        input_settings: &InputSettings,
+        // input_settings: &InputSettings,
         gui_handler: impl FnMut(&mut T, &Context, &mut Scene) -> EngineUpdates,
         user_state: &mut T,
         layout: UiLayout,
@@ -454,17 +454,17 @@ impl GraphicsState {
         if self.inputs_commanded.inputs_present() {
             let dt_secs = dt.as_secs() as f32 + dt.subsec_micros() as f32 / 1_000_000.;
 
-            let cam_changed = match input_settings.initial_controls {
+            let cam_changed = match self.scene.input_settings.control_scheme {
                 ControlScheme::FreeCamera => input::adjust_camera_free(
                     &mut self.scene.camera,
                     &self.inputs_commanded,
-                    &input_settings,
+                    &self.scene.input_settings,
                     dt_secs,
                 ),
                 ControlScheme::Arc { center } => input::adjust_camera_arc(
                     &mut self.scene.camera,
                     &self.inputs_commanded,
-                    &input_settings,
+                    &self.scene.input_settings,
                     center,
                     dt_secs,
                 ),

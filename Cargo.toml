@@ -35,4 +35,4 @@ bincode = { version = "2.0.0-rc.3", optional = true } # For our save/load util.
 
 
 [features]
-app_utils = ["bincode"]
+app_utils = ["bincode", "lin_alg/bincode"]

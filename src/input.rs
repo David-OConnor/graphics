@@ -18,6 +18,8 @@ use crate::{
 const LEFT_CLICK: u32 = 0;
 const RIGHT_CLICK: u32 = 1;
 
+const EPS_MOUSE: f32 = 0.00001;
+
 #[derive(Default, Debug)]
 pub struct InputsCommanded {
     pub fwd: bool,
@@ -37,7 +39,6 @@ pub struct InputsCommanded {
 impl InputsCommanded {
     /// Return true if there are any inputs.
     pub fn inputs_present(&self) -> bool {
-        const EPS: f32 = 0.00001;
         // Note; We don't include `run` or `free_look` here, since it's a modifier.
         self.fwd
             || self.back
@@ -47,8 +48,8 @@ impl InputsCommanded {
             || self.down
             || self.roll_ccw
             || self.roll_cw
-            || self.mouse_delta_x.abs() > EPS
-            || self.mouse_delta_y.abs() > EPS
+            || self.mouse_delta_x.abs() > EPS_MOUSE
+            || self.mouse_delta_y.abs() > EPS_MOUSE
     }
 }
 
@@ -153,9 +154,8 @@ pub fn adjust_camera_free(
     input_settings: &InputSettings,
     dt: f32,
 ) -> bool {
-    let mut move_amt: f32 = input_settings.move_sens * dt;
-    let rotate_amt: f32 = input_settings.rotate_sens * dt;
-    let mut rotate_key_amt: f32 = input_settings.rotate_key_sens * dt;
+    let mut move_amt = input_settings.move_sens * dt;
+    let mut rotate_key_amt = input_settings.rotate_key_sens * dt;
 
     let mut cam_moved = false;
     let mut cam_rotated = false;
@@ -191,26 +191,23 @@ pub fn adjust_camera_free(
         cam_moved = true;
     }
 
-    let fwd = cam.orientation.rotate_vec(FWD_VEC);
-    // todo: Why do we need to reverse these?
-    let up = cam.orientation.rotate_vec(UP_VEC * -1.);
-    let right = cam.orientation.rotate_vec(RIGHT_VEC * -1.);
-
     let mut rotation = Quaternion::new_identity();
 
-    // todo: Why do we need to reverse these?
     if inputs.roll_cw {
+        let fwd = cam.orientation.rotate_vec(FWD_VEC);
         rotation = Quaternion::from_axis_angle(fwd, -rotate_key_amt);
         cam_rotated = true;
     } else if inputs.roll_ccw {
+        let fwd = cam.orientation.rotate_vec(FWD_VEC);
         rotation = Quaternion::from_axis_angle(fwd, rotate_key_amt);
         cam_rotated = true;
     }
 
-    let eps = 0.00001;
+    if inputs.free_look && (inputs.mouse_delta_x.abs() > EPS_MOUSE || inputs.mouse_delta_y.abs() > EPS_MOUSE) {
+        let rotate_amt = input_settings.rotate_sens * dt;
+        let up = cam.orientation.rotate_vec(-UP_VEC);
+        let right = cam.orientation.rotate_vec(-RIGHT_VEC);
 
-    if inputs.free_look && (inputs.mouse_delta_x.abs() > eps || inputs.mouse_delta_y.abs() > eps) {
-        // todo: Why do we have the negative signs here?
         rotation = Quaternion::from_axis_angle(up, -inputs.mouse_delta_x * rotate_amt)
             * Quaternion::from_axis_angle(right, -inputs.mouse_delta_y * rotate_amt)
             * rotation;
@@ -230,6 +227,7 @@ pub fn adjust_camera_free(
 }
 
 /// Adjust the camera orientation and position. Return if there was a change, so we know to update the buffer.
+/// For the arc (orbital) camera.
 pub fn adjust_camera_arc(
     cam: &mut Camera,
     inputs: &InputsCommanded,
@@ -238,63 +236,32 @@ pub fn adjust_camera_arc(
     dt: f32,
 ) -> bool {
     // How fast we rotate, derived from your input settings:
-    let rotate_amt: f32 = input_settings.rotate_sens * dt;
-    let eps = 0.000_01;
-
     // Track if we actually moved/rotated:
     let mut cam_rotated = false;
 
-    // Vector from `center` to current camera position:
-    let mut offset = cam.position - center;
-
     // Only rotate if "free look" is active and the mouse moved enough:
-    if inputs.free_look && (inputs.mouse_delta_x.abs() > eps || inputs.mouse_delta_y.abs() > eps) {
-        // Typically, "yaw" around the global up axis:
-        let global_up = Vec3::new(0.0, 1.0, 0.0);
-        let yaw = Quaternion::from_axis_angle(global_up, -inputs.mouse_delta_x * rotate_amt);
+    if inputs.free_look && (inputs.mouse_delta_x.abs() > EPS_MOUSE || inputs.mouse_delta_y.abs() > EPS_MOUSE) {
+        let rotate_amt = input_settings.rotate_sens * dt;
+        let up = cam.orientation.rotate_vec(-UP_VEC);
+        let right = cam.orientation.rotate_vec(-RIGHT_VEC);
 
-        // For "pitch," use a sideways axis, which is the cross of offset × up:
-        // (We normalize to avoid floating accumulation.)
-        let right_axis = offset.cross(global_up).to_normalized();
-        let pitch = Quaternion::from_axis_angle(right_axis, -inputs.mouse_delta_y * rotate_amt);
+        // Rotation logic: Equivalent to the free camera.
+        let rotation = Quaternion::from_axis_angle(up, -inputs.mouse_delta_x * rotate_amt)
+            * Quaternion::from_axis_angle(right, -inputs.mouse_delta_y * rotate_amt);
 
-        // Combined rotation for orbit:
-        let orbit_rotation = yaw * pitch;
+        cam.orientation = rotation * cam.orientation;
 
-        // Apply rotation to the offset-from-center:
-        offset = orbit_rotation.rotate_vec(offset);
+        // Distance between cam and center is invariant under this change.
+        let dist = (cam.position - center).magnitude();
 
-        // Update the camera's position around the center:
-        cam.position = center + offset;
+
+        // Update position based on the new orientation.
+        cam.position = center - cam.orientation.rotate_vec(FWD_VEC) * dist;
+
+        // cam.position + cam.orientation.rotate_vec(FWD_VEC) * dist = center
 
         cam_rotated = true;
     }
-
-    // Reorient the camera so it looks at `center`:
-    // 1) Forward is from camera to center.
-    let new_forward = (center - cam.position).to_normalized();
-
-    // 2) Use a desired "up" to help compute orientation basis.
-    //    Typically we pick a world up, then correct it in case we are near the pole.
-    let world_up = Vec3::new(0.0, 1.0, 0.0);
-
-    // 3) Right vector is forward × up
-    let new_right = new_forward.cross(world_up).to_normalized();
-    // 4) Corrected up is right × forward
-    let corrected_up = new_right.cross(new_forward).to_normalized();
-
-    // todo: I don't like this. From chatGPT. We shouldn't use a matrix.
-    // Convert these basis vectors into a rotation (orientation) for the camera.
-    // Note that some systems prefer forward = -Z; adjust as needed.
-    // For example, if your camera's local FWD is -Z, you can invert the forward axis below.
-
-    // let orientation_mat = Mat3::from_cols(new_right, corrected_up, -new_forward);
-    // cam.orientation = Quaternion::from_mat3(&orientation_mat);
-
-    // cam.orientation = Quaternion::from_unit_vecs(new_right, corrected_up);
-    // cam.orientation = Quaternion::from_unit_vecs(corrected_up, new_right);
-
-    cam.orientation = Quaternion::from_unit_vecs(UP_VEC, corrected_up);
 
     cam_rotated
 }

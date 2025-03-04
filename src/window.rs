@@ -78,7 +78,7 @@ where
                     sys.surface_cfg.width,
                     sys.surface_cfg.height,
                     &mut self.ui_settings,
-                    &self.input_settings,
+                    // &self.scene.input_settings,
                     &mut self.gui_handler,
                     &mut self.user_state,
                     layout,
@@ -253,7 +253,7 @@ where
         if !gui.mouse_in_gui {
             let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;
 
-            graphics.handle_input(&event, &self.input_settings);
+            graphics.handle_input(&event, &self.scene.input_settings);
             let inputs_present = graphics.inputs_commanded.inputs_present();
 
             let updates_event = (self.event_dev_handler)(
