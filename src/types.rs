@@ -2,7 +2,6 @@
 
 #[cfg(feature = "app_utils")]
 use bincode::{Decode, Encode};
-
 use lin_alg::f32::{Mat4, Quaternion, Vec3, Vec4};
 use wgpu::{VertexAttribute, VertexFormat};
 
@@ -333,7 +332,6 @@ pub struct Scene {
     pub background_color: (f32, f32, f32),
     pub window_title: String,
     pub window_size: (f32, f32),
-
 }
 
 impl Default for Scene {

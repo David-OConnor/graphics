@@ -18,8 +18,8 @@ license = "MIT"
 
 [dependencies]
 wgpu = "^24.0.1"
-#lin_alg = { version = "^1.0.6", features = ["computer_graphics"] }
-lin_alg = { path = "../lin_alg", features = ["computer_graphics"] }
+lin_alg = { version = "^1.0.6", features = ["computer_graphics"] }
+#lin_alg = { path = "../lin_alg", features = ["computer_graphics"] }
 
 pollster = "^0.4.0"  # For 2 WGPU init fns that use async.
 

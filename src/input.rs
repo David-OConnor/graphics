@@ -203,7 +203,9 @@ pub fn adjust_camera_free(
         cam_rotated = true;
     }
 
-    if inputs.free_look && (inputs.mouse_delta_x.abs() > EPS_MOUSE || inputs.mouse_delta_y.abs() > EPS_MOUSE) {
+    if inputs.free_look
+        && (inputs.mouse_delta_x.abs() > EPS_MOUSE || inputs.mouse_delta_y.abs() > EPS_MOUSE)
+    {
         let rotate_amt = input_settings.rotate_sens * dt;
         let up = cam.orientation.rotate_vec(-UP_VEC);
         let right = cam.orientation.rotate_vec(-RIGHT_VEC);
@@ -240,7 +242,9 @@ pub fn adjust_camera_arc(
     let mut cam_rotated = false;
 
     // Only rotate if "free look" is active and the mouse moved enough:
-    if inputs.free_look && (inputs.mouse_delta_x.abs() > EPS_MOUSE || inputs.mouse_delta_y.abs() > EPS_MOUSE) {
+    if inputs.free_look
+        && (inputs.mouse_delta_x.abs() > EPS_MOUSE || inputs.mouse_delta_y.abs() > EPS_MOUSE)
+    {
         let rotate_amt = input_settings.rotate_sens * dt;
         let up = cam.orientation.rotate_vec(-UP_VEC);
         let right = cam.orientation.rotate_vec(-RIGHT_VEC);
@@ -253,7 +257,6 @@ pub fn adjust_camera_arc(
 
         // Distance between cam and center is invariant under this change.
         let dist = (cam.position - center).magnitude();
-
 
         // Update position based on the new orientation.
         cam.position = center - cam.orientation.rotate_vec(FWD_VEC) * dist;
