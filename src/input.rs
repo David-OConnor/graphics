@@ -3,13 +3,14 @@
 use egui::Key;
 use lin_alg::f32::{Mat3, Quaternion, Vec3};
 // todo: remove Winit from this module if you can, and make it agnostic?
-use winit::event::{DeviceEvent, ElementState};
+use winit::event::{DeviceEvent, ElementState, MouseScrollDelta};
 use winit::{
     keyboard::{KeyCode, PhysicalKey::Code},
     platform::scancode::PhysicalKeyExtScancode,
 };
 
 use crate::{
+    ScrollBehavior,
     camera::Camera,
     graphics::{FWD_VEC, RIGHT_VEC, UP_VEC},
     types::InputSettings,
@@ -33,13 +34,16 @@ pub struct InputsCommanded {
     pub mouse_delta_x: f32,
     pub mouse_delta_y: f32,
     pub run: bool,
+    pub scroll_up: bool,
+    pub scroll_down: bool,
     pub free_look: bool,
+    pub panning: bool, // todo: Implement A/R
 }
 
 impl InputsCommanded {
     /// Return true if there are any inputs.
     pub fn inputs_present(&self) -> bool {
-        // Note; We don't include `run` or `free_look` here, since it's a modifier.
+        // Note; We don't include `run` or `free_look` here, since they're modifiers..
         self.fwd
             || self.back
             || self.left
@@ -50,6 +54,8 @@ impl InputsCommanded {
             || self.roll_cw
             || self.mouse_delta_x.abs() > EPS_MOUSE
             || self.mouse_delta_y.abs() > EPS_MOUSE
+            || self.scroll_up
+            || self.scroll_down
     }
 }
 
@@ -142,7 +148,63 @@ pub(crate) fn add_input_cmd(event: &DeviceEvent, inputs: &mut InputsCommanded) {
             inputs.mouse_delta_x += delta.0 as f32;
             inputs.mouse_delta_y += delta.1 as f32;
         }
+        // Move the camera forward and back on scroll.
+        DeviceEvent::MouseWheel { delta } => match delta {
+            MouseScrollDelta::PixelDelta(_) => (),
+            MouseScrollDelta::LineDelta(_x, y) => {
+                if *y > 0. {
+                    inputs.scroll_down = true;
+                } else {
+                    inputs.scroll_up = true;
+                }
+            }
+        },
         _ => (),
+    }
+}
+
+fn handle_scroll(
+    cam: &mut Camera,
+    inputs: &mut InputsCommanded,
+    input_settings: &InputSettings,
+    dt: f32,
+    movement_vec: &mut Vec3,
+    rotation: &mut Quaternion,
+    cam_moved: &mut bool,
+    cam_rotated: &mut bool,
+) {
+    if inputs.scroll_down || inputs.scroll_up {
+        if let ScrollBehavior::MoveRoll {
+            move_amt,
+            rotate_amt,
+        } = input_settings.scroll_behavior
+        {
+            if inputs.free_look {
+                // Roll if left button down while scrolling
+                let fwd = cam.orientation.rotate_vec(FWD_VEC);
+
+                let mut rot_amt = -rotate_amt * dt;
+                if inputs.scroll_down {
+                    rot_amt *= -1.; // todo: Allow reversed behavior for arc cam?
+                }
+
+                *rotation = Quaternion::from_axis_angle(fwd, rot_amt);
+                *cam_rotated = true;
+            } else {
+                // Otherwise, move forward and backward.
+                let mut movement = Vec3::new(0., 0., move_amt);
+                if inputs.scroll_up {
+                    movement *= -1.;
+                }
+                *movement_vec += movement;
+
+                *cam_moved = true;
+            }
+        }
+
+        // Immediately send the "release" command; not on a Release event like keys.
+        inputs.scroll_down = false;
+        inputs.scroll_up = false;
     }
 }
 
@@ -150,7 +212,7 @@ pub(crate) fn add_input_cmd(event: &DeviceEvent, inputs: &mut InputsCommanded) {
 /// For the free (6DOF first-person) camera.
 pub fn adjust_camera_free(
     cam: &mut Camera,
-    inputs: &InputsCommanded,
+    inputs: &mut InputsCommanded,
     input_settings: &InputSettings,
     dt: f32,
 ) -> bool {
@@ -161,6 +223,7 @@ pub fn adjust_camera_free(
     let mut cam_rotated = false;
 
     let mut movement_vec = Vec3::new_zero();
+    let mut rotation = Quaternion::new_identity();
 
     if inputs.run {
         move_amt *= input_settings.run_factor;
@@ -191,8 +254,6 @@ pub fn adjust_camera_free(
         cam_moved = true;
     }
 
-    let mut rotation = Quaternion::new_identity();
-
     if inputs.roll_cw {
         let fwd = cam.orientation.rotate_vec(FWD_VEC);
         rotation = Quaternion::from_axis_angle(fwd, -rotate_key_amt);
@@ -217,12 +278,25 @@ pub fn adjust_camera_free(
         cam_rotated = true;
     }
 
-    if cam_moved {
-        cam.position += cam.orientation.rotate_vec(movement_vec);
-    }
+    handle_scroll(
+        cam,
+        inputs,
+        input_settings,
+        dt,
+        &mut movement_vec,
+        &mut rotation,
+        &mut cam_moved,
+        &mut cam_rotated,
+    );
+
+    // todo: Handle middleclick + drag here too. Move `mol_dock`'s impl here.
 
     if cam_rotated {
         cam.orientation = rotation * cam.orientation;
+    }
+
+    if cam_moved {
+        cam.position += cam.orientation.rotate_vec(movement_vec);
     }
 
     cam_moved || cam_rotated
@@ -232,15 +306,22 @@ pub fn adjust_camera_free(
 /// For the arc (orbital) camera.
 pub fn adjust_camera_arc(
     cam: &mut Camera,
-    inputs: &InputsCommanded,
+    inputs: &mut InputsCommanded,
     input_settings: &InputSettings,
     center: Vec3,
     dt: f32,
 ) -> bool {
     // How fast we rotate, derived from your input settings:
     // Track if we actually moved/rotated:
+    let mut cam_moved = false;
     let mut cam_rotated = false;
 
+    let mut movement_vec = Vec3::new_zero();
+    let mut rotation = Quaternion::new_identity();
+
+    // todo: Combine this fn with adjust_free, and accept ControlScheme as a param?
+
+    let mut skip_move_vec = false;
     // Only rotate if "free look" is active and the mouse moved enough:
     if inputs.free_look
         && (inputs.mouse_delta_x.abs() > EPS_MOUSE || inputs.mouse_delta_y.abs() > EPS_MOUSE)
@@ -250,21 +331,41 @@ pub fn adjust_camera_arc(
         let right = cam.orientation.rotate_vec(-RIGHT_VEC);
 
         // Rotation logic: Equivalent to the free camera.
-        let rotation = Quaternion::from_axis_angle(up, -inputs.mouse_delta_x * rotate_amt)
+        rotation = Quaternion::from_axis_angle(up, -inputs.mouse_delta_x * rotate_amt)
             * Quaternion::from_axis_angle(right, -inputs.mouse_delta_y * rotate_amt);
 
-        cam.orientation = rotation * cam.orientation;
-
         // Distance between cam and center is invariant under this change.
-        let dist = (cam.position - center).magnitude();
+        skip_move_vec = true;
 
-        // Update position based on the new orientation.
-        cam.position = center - cam.orientation.rotate_vec(FWD_VEC) * dist;
-
-        // cam.position + cam.orientation.rotate_vec(FWD_VEC) * dist = center
-
+        cam_moved = true;
         cam_rotated = true;
     }
 
-    cam_rotated
+    handle_scroll(
+        cam,
+        inputs,
+        input_settings,
+        dt,
+        &mut movement_vec,
+        &mut rotation,
+        &mut cam_moved,
+        &mut cam_rotated,
+    );
+
+    // todo: Handle middleclick + drag here too. Move `mol_dock`'s impl here.
+
+    if cam_rotated {
+        cam.orientation = rotation * cam.orientation;
+    }
+
+    if cam_moved && !skip_move_vec {
+        cam.position += cam.orientation.rotate_vec(movement_vec);
+    } else if cam_moved {
+        // todo: Bit odd to break this off from the above.
+        let dist = (cam.position - center).magnitude();
+        // Update position based on the new orientation.
+        cam.position = center - cam.orientation.rotate_vec(FWD_VEC) * dist;
+    }
+
+    cam_moved || cam_rotated
 }

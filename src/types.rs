@@ -388,6 +388,15 @@ impl Scene {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub enum ScrollBehavior {
+    #[default]
+    None,
+    /// Move forward and back, relative to the camera when scrolling.
+    /// When the left mouse button is held, this behavior changes to camera rolling.
+    MoveRoll { move_amt: f32, rotate_amt: f32 },
+}
+
 #[derive(Clone, Debug)]
 /// These sensitivities are in units (position), or radians (orientation) per second.
 pub struct InputSettings {
@@ -397,6 +406,10 @@ pub struct InputSettings {
     /// How much the move speed is multiplied when holding the run key.
     pub run_factor: f32,
     pub control_scheme: ControlScheme,
+    /// Move forward and backwards with the scroll wheel; largely independent from
+    /// control scheme. For now
+    pub scroll_behavior: ScrollBehavior,
+    pub middle_click_pan: bool,
 }
 
 impl Default for InputSettings {
@@ -407,6 +420,8 @@ impl Default for InputSettings {
             rotate_sens: 0.45,
             rotate_key_sens: 1.0,
             run_factor: 5.,
+            scroll_behavior: Default::default(),
+            middle_click_pan: true,
         }
     }
 }

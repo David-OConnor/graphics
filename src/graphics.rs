@@ -457,13 +457,13 @@ impl GraphicsState {
             let cam_changed = match self.scene.input_settings.control_scheme {
                 ControlScheme::FreeCamera => input::adjust_camera_free(
                     &mut self.scene.camera,
-                    &self.inputs_commanded,
+                    &mut self.inputs_commanded,
                     &self.scene.input_settings,
                     dt_secs,
                 ),
                 ControlScheme::Arc { center } => input::adjust_camera_arc(
                     &mut self.scene.camera,
-                    &self.inputs_commanded,
+                    &mut self.inputs_commanded,
                     &self.scene.input_settings,
                     center,
                     dt_secs,

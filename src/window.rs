@@ -85,7 +85,6 @@ where
                 );
 
                 if resize_required {
-                    println!("Resize requested from GUI");
                     self.resize(sys.size);
                 }
             }

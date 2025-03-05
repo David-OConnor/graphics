@@ -29,8 +29,8 @@ pub use input::{InputsCommanded, adjust_camera_free};
 pub use lighting::{LightType, Lighting, PointLight};
 pub use system::run;
 pub use types::{
-    ControlScheme, EngineUpdates, Entity, GraphicsSettings, InputSettings, Mesh, Scene, UiLayout,
-    UiSettings, Vertex,
+    ControlScheme, EngineUpdates, Entity, GraphicsSettings, InputSettings, Mesh, Scene,
+    ScrollBehavior, UiLayout, UiSettings, Vertex,
 };
 // Re-export winit DeviceEvents for use in the API; this prevents the calling
 // lib from needing to use winit as a dependency directly.
