@@ -206,7 +206,7 @@ impl GraphicsState {
         }
     }
 
-    /// todo: WIP to update meshes.
+    /// Updates meshes.
     pub(crate) fn setup_vertices_indices(&mut self, device: &Device) {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
@@ -294,7 +294,6 @@ impl GraphicsState {
             instance_start_this_mesh += instance_count_this_mesh;
         }
 
-        // todo: Helper fn that takes a `ToBytes` trait we haven't made?
         let mut instance_data = Vec::new();
         for instance in &instances {
             for byte in instance.to_bytes() {
@@ -343,13 +342,11 @@ impl GraphicsState {
         match ui_settings.layout {
             UiLayout::Left | UiLayout::Right => {
                 if ui_size > width as f32 {
-                    // eprintln!("Ui size greater than width");
                     (x, y, eff_width, eff_height) = (0., 0., width as f32, height as f32);
                 }
             }
             _ => {
                 if ui_size >= height as f32 {
-                    // eprintln!("Ui size greater than height");
                     (x, y, eff_width, eff_height) = (0., 0., width as f32, height as f32);
                 }
             }
@@ -442,7 +439,6 @@ impl GraphicsState {
         width: u32,
         height: u32,
         ui_settings: &mut UiSettings,
-        // input_settings: &InputSettings,
         gui_handler: impl FnMut(&mut T, &Context, &mut Scene) -> EngineUpdates,
         user_state: &mut T,
         layout: UiLayout,
@@ -503,7 +499,11 @@ impl GraphicsState {
             layout,
         );
 
-        // todo: This rpass code does not contribute to the performance problem.
+        // Note: If we process engine updates after setting up the render pass, we will not be
+        // able to add meshes at runtime; code run from the `engine_updates.meshes` flag must be
+        // done along with a mesh change prior to setting up the render pass, or else we will get
+        // an error about an index being out of bounds.
+        process_engine_updates(&updates_gui, self, device, queue);
 
         let mut rpass = self.setup_render_pass(
             gui.size,
@@ -524,9 +524,6 @@ impl GraphicsState {
             gui.egui_renderer.free_texture(x)
         }
 
-        process_engine_updates(&updates_gui, self, device, queue);
-
-        // todo: This queue line is likely the problem! Is your queue just getting bigger??
         queue.submit(Some(encoder.finish()));
 
         surface_texture.present();

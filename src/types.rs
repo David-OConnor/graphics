@@ -64,9 +64,9 @@ impl Vertex {
         result[12..16].clone_from_slice(&self.tex_coords[0].to_ne_bytes());
         result[16..20].clone_from_slice(&self.tex_coords[1].to_ne_bytes());
 
-        result[20..32].clone_from_slice(&self.normal.to_bytes_vertex());
-        result[32..44].clone_from_slice(&self.tangent.to_bytes_vertex());
-        result[44..56].clone_from_slice(&self.bitangent.to_bytes_vertex());
+        result[20..32].clone_from_slice(&self.normal.to_bytes());
+        result[32..44].clone_from_slice(&self.tangent.to_bytes());
+        result[44..56].clone_from_slice(&self.bitangent.to_bytes());
 
         result
     }

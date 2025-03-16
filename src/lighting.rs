@@ -140,7 +140,7 @@ impl PointLight {
             result[i] = 1;
             i += F32_SIZE; // u32
 
-            result[i..i + VEC3_SIZE].clone_from_slice(&direction.to_bytes_vertex());
+            result[i..i + VEC3_SIZE].clone_from_slice(&direction.to_bytes());
             i += VEC3_SIZE;
 
             result[i..i + F32_SIZE].clone_from_slice(&fov.to_ne_bytes());
