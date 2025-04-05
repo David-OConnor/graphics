@@ -103,9 +103,6 @@ where
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        println!("Engine resumed; rebuilding window, render, and graphics state.");
-        // todo: Only re-init if not already inited?
-
         let icon = match self.ui_settings.icon_path {
             Some(ref p) => {
                 match load_icon(Path::new(&p)) {
@@ -267,7 +264,7 @@ where
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {}
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {}
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {}
 }

@@ -24,7 +24,7 @@ use crate::{
     graphics::GraphicsState,
     gui::GuiState,
     texture::Texture,
-    types::{EngineUpdates, GraphicsSettings, InputSettings, Scene, UiLayout, UiSettings},
+    types::{EngineUpdates, GraphicsSettings, Scene, UiLayout, UiSettings},
 };
 
 pub const COLOR_FORMAT: TextureFormat = TextureFormat::Bgra8UnormSrgb;
@@ -184,7 +184,7 @@ where
         }
 
         let mut sys = self.render.as_mut().unwrap();
-        let mut graphics = self.graphics.as_mut().unwrap();
+        let graphics = self.graphics.as_mut().unwrap();
         let mut gui = self.gui.as_mut().unwrap();
 
         if new_size.width > 0 && new_size.height > 0 {
