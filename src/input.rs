@@ -136,7 +136,15 @@ pub(crate) fn add_input_cmd(event: &DeviceEvent, inputs: &mut InputsCommanded) {
             }
         }
         DeviceEvent::Button { button, state } => {
-            if *button == LEFT_CLICK {
+            // todo: Experiment?
+            #[cfg(target_os = "linux")]
+            let left_click = LEFT_CLICK;
+            #[cfg(not(target_os = "linux"))]
+            let left_click = 1;
+
+            // What happened: left click (event 0) triggered behavior of event 1.
+
+            if *button == left_click {
                 inputs.free_look = match state {
                     ElementState::Pressed => true,
                     ElementState::Released => false,
