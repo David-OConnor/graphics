@@ -1,6 +1,5 @@
 //! Handles keyboard and mouse input, eg for moving the camera.
 
-use egui::Key;
 use lin_alg::f32::{Quaternion, Vec3};
 // todo: remove Winit from this module if you can, and make it agnostic?
 use winit::event::{DeviceEvent, ElementState, MouseScrollDelta};
@@ -14,9 +13,6 @@ use crate::{
     graphics::{FWD_VEC, RIGHT_VEC, UP_VEC},
     types::InputSettings,
 };
-
-const LEFT_CLICK: u32 = 0;
-const RIGHT_CLICK: u32 = 1;
 
 const EPS_MOUSE: f32 = 0.00001;
 
@@ -138,9 +134,9 @@ pub(crate) fn add_input_cmd(event: &DeviceEvent, inputs: &mut InputsCommanded) {
         DeviceEvent::Button { button, state } => {
             // todo: Experiment?
             #[cfg(target_os = "linux")]
-            let left_click = LEFT_CLICK;
-            #[cfg(not(target_os = "linux"))]
             let left_click = 1;
+            #[cfg(not(target_os = "linux"))]
+            let left_click = 0;
 
             // What happened: left click (event 0) triggered behavior of event 1.
 
