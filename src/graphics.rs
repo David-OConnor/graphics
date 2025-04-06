@@ -505,7 +505,7 @@ impl GraphicsState {
         // an error about an index being out of bounds.
         process_engine_updates(&updates_gui, self, device, queue);
 
-        let mut rpass = self.setup_render_pass(
+        let rpass = self.setup_render_pass(
             gui.size,
             &mut encoder,
             output_texture,

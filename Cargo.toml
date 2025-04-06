@@ -31,7 +31,7 @@ egui = "^0.31.0"
 egui-wgpu = "^0.31.0"
 egui-winit = "^0.31.0"
 
-bincode = { version = "2.0.0-rc.3", optional = true } # For our save/load util.
+bincode = { version = "^2.0.1", optional = true } # For our save/load util.
 
 
 [features]

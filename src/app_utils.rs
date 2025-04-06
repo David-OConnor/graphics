@@ -21,18 +21,21 @@ pub fn save<T: Encode>(path: &Path, data: &T) -> io::Result<()> {
 }
 
 /// Load from file, using Bincode. We currently use this for preference files.
-pub fn load<T: Decode>(path: &Path) -> io::Result<T> {
+pub fn load<T: Decode<i8>>(path: &Path) -> io::Result<T> {
     let config = bincode::config::standard();
 
     let mut file = File::open(path)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
-    let (decoded, _len) = match bincode::decode_from_slice(&buffer, config) {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("Error loading from file. Did the format change?");
-            return Err(io::Error::new(ErrorKind::Other, "error loading"));
-        }
-    };
-    Ok(decoded)
+
+// todo temp!!
+    // let (decoded, _len) = match bincode::decode_from_slice(&buffer, config) {
+    //     Ok(v) => v,
+    //     Err(_) => {
+    //         eprintln!("Error loading from file. Did the format change?");
+    //         return Err(io::Error::new(ErrorKind::Other, "error loading"));
+    //     }
+    // };
+    // Ok(decoded)
+    return Err(io::Error::new(ErrorKind::Other, "error loading"));
 }
