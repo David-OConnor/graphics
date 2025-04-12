@@ -114,6 +114,29 @@ impl Vertex {
     }
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GaussianInstance {
+    pub center: [f32; 3],
+    pub amplitude: f32,
+    pub width: f32,          // σ  (not σ²)
+    pub _pad:   [f32; 3],    // 16‑B alignment
+}
+
+impl GaussianInstance {
+    pub fn to_bytes(&self) -> [u8; 32] {
+        let mut result = [0; 32];
+        result[0..4].clone_from_slice(&self.center[0].to_ne_bytes());
+        result[4..8].clone_from_slice(&self.center[1].to_ne_bytes());
+        result[8..12].clone_from_slice(&self.center[2].to_ne_bytes());
+        result[12..16].clone_from_slice(&self.amplitude.to_ne_bytes());
+        result[16..20].clone_from_slice(&self.width.to_ne_bytes());
+
+        result
+
+    }
+}
+
 /// Instances allow the GPU to render the same object multiple times.
 /// "Instancing allows us to draw the same object multiple times with different properties
 /// (position, orientation, size, color, etc.). "

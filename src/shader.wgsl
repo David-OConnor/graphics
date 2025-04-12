@@ -33,6 +33,7 @@ var<uniform> camera: Camera;
 // this is due to the dynamic-sized point light array.
 var<storage> lighting: Lighting;
 
+
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) tex_coords: vec2<f32>, // unused

@@ -33,6 +33,7 @@ use crate::{
         ControlScheme, EngineUpdates, InputSettings, Instance, Scene, UiLayout, UiSettings, Vertex,
     },
 };
+use crate::types::GaussianInstance;
 
 pub const UP_VEC: Vec3 = Vec3 {
     x: 0.,
@@ -55,10 +56,12 @@ pub(crate) struct GraphicsState {
     pub vertex_buf: Buffer,
     pub index_buf: Buffer,
     instance_buf: Buffer,
+    instance_gauss_buf: Buffer,
     pub bind_groups: BindGroupData,
     pub camera_buf: Buffer,
     lighting_buf: Buffer,
-    pub pipeline: RenderPipeline, // todo: Move to renderer.
+    pub pipeline_mesh: RenderPipeline, // todo: Move to renderer.
+    pub pipeline_gauss: RenderPipeline, // todo: Move to renderer.
     pub depth_texture: Texture,
     pub msaa_texture: Option<TextureView>, // MSAA Multisampled texture
     pub inputs_commanded: InputsCommanded,
@@ -110,22 +113,42 @@ impl GraphicsState {
         let depth_texture =
             Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_samples);
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let shader_mesh = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Graphics shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        let pipeline_layout_graphics =
+        let pipeline_layout_mesh =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render pipeline layout"),
                 bind_group_layouts: &[&bind_groups.layout_cam, &bind_groups.layout_lighting],
                 push_constant_ranges: &[],
             });
 
-        let pipeline_graphics = create_render_pipeline(
+        let pipeline_mesh = create_render_pipeline(
             device,
-            &pipeline_layout_graphics,
-            shader,
+            &pipeline_layout_mesh,
+            shader_mesh,
+            surface_cfg,
+            msaa_samples,
+        );
+
+        let shader_mesh = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Graphics shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        });
+
+        let pipeline_layout_gauss =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Gaussian pipeline layout"),
+                bind_group_layouts: &[&bind_groups.layout_cam],
+                push_constant_ranges: &[],
+            });
+
+        let pipeline_gauss = create_render_pipeline(
+            device,
+            &pipeline_layout_mesh,
+            shader_mesh,
             surface_cfg,
             msaa_samples,
         );
@@ -134,6 +157,12 @@ impl GraphicsState {
         // let instances = Vec::new();
         let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Instance buffer"),
+            contents: &[], // empty on init
+            usage: BufferUsages::VERTEX,
+        });
+
+        let instance_gauss_buf = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Gaussian Instance buffer"),
             contents: &[], // empty on init
             usage: BufferUsages::VERTEX,
         });
@@ -155,10 +184,12 @@ impl GraphicsState {
             vertex_buf,
             index_buf,
             instance_buf,
+            instance_gauss_buf,
             bind_groups,
             camera_buf: cam_buf,
             lighting_buf,
-            pipeline: pipeline_graphics,
+            pipeline_mesh,
+            pipeline_gauss,
             depth_texture,
             // staging_belt: wgpu::util::StagingBelt::new(0x100),
             scene,
@@ -301,6 +332,25 @@ impl GraphicsState {
             }
         }
 
+        // todo, once working.
+        // let mut instances_gauss = Vec::new();
+        // for gauss_instance in self.scene.gaussians {
+        //     instances_gauss.push(gauss_instance);/
+        // }
+        let instances_gauss = vec![GaussianInstance {
+            center: [0., 0., 0.],
+            amplitude: 1.,
+            width: 5.,
+            _pad: [0.; 3],
+        }];
+
+        let mut instance_gauss_data = Vec::new();
+        for instance in &instances_gauss {
+            for byte in instance.to_bytes() {
+                instance_gauss_data.push(byte);
+            }
+        }
+
         // We can't update using a queue due to buffer size mismatches.
         let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Instance buffer"),
@@ -309,6 +359,15 @@ impl GraphicsState {
         });
 
         self.instance_buf = instance_buf;
+
+        let instance_gauss_buf = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Gaussian Instance buffer"),
+            contents: &instance_gauss_data,
+            usage: BufferUsages::VERTEX,
+        });
+
+        self.instance_gauss_buf = instance_gauss_buf;
+
         self.mesh_mappings = mesh_mappings;
     }
 
@@ -395,7 +454,7 @@ impl GraphicsState {
 
         rpass.set_viewport(x, y, eff_width, eff_height, 0., 1.);
 
-        rpass.set_pipeline(&self.pipeline);
+        rpass.set_pipeline(&self.pipeline_mesh);
 
         rpass.set_bind_group(0, &self.bind_groups.cam, &[]);
         rpass.set_bind_group(1, &self.bind_groups.lighting, &[]);
