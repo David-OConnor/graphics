@@ -13,17 +13,12 @@ use std::{sync::Arc, time::Duration};
 
 use egui::Context;
 use lin_alg::f32::Vec3;
-use wgpu::{
-    self, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer, BufferBindingType,
-    BufferUsages, CommandEncoder, CommandEncoderDescriptor, DepthStencilState, Device,
-    FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment, RenderPassDescriptor,
-    RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration, SurfaceTexture, TextureDescriptor,
-    TextureView, VertexBufferLayout, VertexState,
-    util::{BufferInitDescriptor, DeviceExt},
-};
+use wgpu::{self, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer, BufferBindingType, BufferUsages, CommandEncoder, CommandEncoderDescriptor, DepthStencilState, Device, FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration, SurfaceTexture, TextureDescriptor, TextureView, VertexBufferLayout, VertexState, util::{BufferInitDescriptor, DeviceExt}, BlendComponent, BlendFactor, BlendOperation};
 use winit::{event::DeviceEvent, window::Window};
+
 use crate::{
-    gauss::{GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT, QUAD_VERTICES},
+    camera::{CAMERA_SIZE},
+    gauss::{CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT, QUAD_VERTICES},
     gui::GuiState,
     input::{self, InputsCommanded},
     system::{DEPTH_FORMAT, process_engine_updates},
@@ -33,9 +28,6 @@ use crate::{
         UiSettings, VERTEX_LAYOUT,
     },
 };
-use crate::camera::{CAMERA_SIZE, CAMERA_SIZE_SEP_VIEW_PROJ};
-use crate::gauss::{CameraBasis, CAM_BASIS_SIZE};
-use crate::lighting::LIGHTING_SIZE_FIXED;
 
 pub const UP_VEC: Vec3 = Vec3 {
     x: 0.,
@@ -115,11 +107,11 @@ impl GraphicsState {
         });
 
         // For gauss
-        let cam_buf_sep_proj_view = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Camera buffer, separate proj and view."),
-            contents: &scene.camera.to_bytes_sep_proj_view(),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
+        // let cam_buf_sep_proj_view = device.create_buffer_init(&BufferInitDescriptor {
+        //     label: Some("Camera buffer, separate proj and view."),
+        //     contents: &scene.camera.to_bytes_sep_proj_view(),
+        //     usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        // });
 
         // for gauss
         let cam_basis_buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -138,7 +130,13 @@ impl GraphicsState {
         });
         //
 
-        let bind_groups = create_bindgroups(device, &cam_buf, &cam_buf_sep_proj_view, &cam_basis_buf, &lighting_buf);
+        let bind_groups = create_bindgroups(
+            device,
+            &cam_buf,
+            // &cam_buf_sep_proj_view,
+            &cam_basis_buf,
+            &lighting_buf,
+        );
 
         let depth_texture =
             Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_samples);
@@ -216,7 +214,19 @@ impl GraphicsState {
             msaa_samples,
             &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
             depth_stencil_gauss,
-            Some(BlendState::ALPHA_BLENDING),
+            // Some(BlendState::ALPHA_BLENDING),
+            Some(BlendState {
+                color: BlendComponent {
+                    src_factor: BlendFactor::One,
+                    dst_factor: BlendFactor::One,
+                    operation: BlendOperation::Add,
+                },
+                alpha: BlendComponent {
+                    src_factor: BlendFactor::One,
+                    dst_factor: BlendFactor::One,
+                    operation: BlendOperation::Add,
+                },
+            }),
             "Render pipeline gaussian",
         );
 
@@ -430,12 +440,12 @@ impl GraphicsState {
     pub(crate) fn update_camera(&mut self, queue: &Queue) {
         queue.write_buffer(&self.camera_buf, 0, &self.scene.camera.to_bytes());
 
-        // Required due to not being able to take inverse of 4x3 matrices in shaders?
+        // Required due to not being able to take inverse of 4x4 matrices in shaders?
         if !self.scene.gaussians.is_empty() {
             queue.write_buffer(
                 &self.cam_basis_buf,
                 0,
-                &CameraBasis::new(self.scene.camera.orientation, self.scene.camera.view_mat()).to_bytes(),
+                &CameraBasis::new(self.scene.camera.view_mat()).to_bytes(),
             );
         }
     }
@@ -736,7 +746,13 @@ pub(crate) struct BindGroupData {
     // pub texture: BindGroup,
 }
 
-fn create_bindgroups(device: &Device, cam_buf: &Buffer, cam_buf_sep: &Buffer, cam_basis_buf: &Buffer, lighting_buf: &Buffer) -> BindGroupData {
+fn create_bindgroups(
+    device: &Device,
+    cam_buf: &Buffer,
+    // cam_buf_sep: &Buffer,
+    cam_basis_buf: &Buffer,
+    lighting_buf: &Buffer,
+) -> BindGroupData {
     // We only need vertex, not fragment info in the camera uniform.
     let layout_cam = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         entries: &[wgpu::BindGroupLayoutEntry {
@@ -747,9 +763,7 @@ fn create_bindgroups(device: &Device, cam_buf: &Buffer, cam_buf_sep: &Buffer, ca
                 // The dynamic field indicates whether this buffer will change size or
                 // not. This is useful if we want to store an array of things in our uniforms.
                 has_dynamic_offset: false,
-                // todo: Get this working.
-                // min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE as _),
-                min_binding_size: None,
+                min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE as _),
             },
             count: None,
         }],
@@ -765,20 +779,21 @@ fn create_bindgroups(device: &Device, cam_buf: &Buffer, cam_buf_sep: &Buffer, ca
         label: Some("Camera bind group"),
     });
 
-
     let layout_cam_gauss = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                // The dynamic field indicates whether this buffer will change size or
-                // not. This is useful if we want to store an array of things in our uniforms.
-                has_dynamic_offset: false,
-                min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE_SEP_VIEW_PROJ as _),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    // The dynamic field indicates whether this buffer will change size or
+                    // not. This is useful if we want to store an array of things in our uniforms.
+                    has_dynamic_offset: false,
+                    // min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE_SEP_VIEW_PROJ as _),
+                    min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE as _),
+                },
+                count: None,
             },
-            count: None,
-        },
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
                 visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
@@ -790,7 +805,8 @@ fn create_bindgroups(device: &Device, cam_buf: &Buffer, cam_buf_sep: &Buffer, ca
                     min_binding_size: wgpu::BufferSize::new(CAM_BASIS_SIZE as _),
                 },
                 count: None,
-            }],
+            },
+        ],
         label: Some("Camera gaussian bind group layout"),
     });
 
@@ -800,7 +816,8 @@ fn create_bindgroups(device: &Device, cam_buf: &Buffer, cam_buf_sep: &Buffer, ca
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: cam_buf_sep.as_entire_binding(),
+                // resource: cam_buf_sep.as_entire_binding(),
+                resource: cam_buf.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
@@ -816,8 +833,6 @@ fn create_bindgroups(device: &Device, cam_buf: &Buffer, cam_buf_sep: &Buffer, ca
             ty: BindingType::Buffer {
                 ty: BufferBindingType::Storage { read_only: true }, // todo read-only?
                 has_dynamic_offset: false,
-                // todo: Get this working.
-                // min_binding_size: wgpu::BufferSize::new(LIGHTING_SIZE_FIXED as _),
                 min_binding_size: None,
             },
             count: None,
