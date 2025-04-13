@@ -9,6 +9,7 @@ use crate::types::{MAT4_SIZE, VEC3_UNIFORM_SIZE};
 // cam size is only the parts we pass to the shader.
 // For each of the 4 matrices in the camera, plus a padded vec3 for position.
 pub const CAMERA_SIZE: usize = MAT4_SIZE + VEC3_UNIFORM_SIZE;
+pub const CAMERA_SIZE_SEP_VIEW_PROJ: usize = CAMERA_SIZE + 2 * MAT4_SIZE;
 
 #[derive(Clone, Debug)]
 pub struct Camera {
@@ -32,6 +33,20 @@ impl Camera {
 
         result[0..MAT4_SIZE].clone_from_slice(&proj_view.to_bytes());
         result[MAT4_SIZE..CAMERA_SIZE].clone_from_slice(&self.position.to_bytes_uniform());
+
+        result
+    }
+
+    /// We currently use this for our gaussian shader.
+    pub fn to_bytes_sep_proj_view(&self) -> [u8; CAMERA_SIZE_SEP_VIEW_PROJ] {
+        let mut result = [0; CAMERA_SIZE_SEP_VIEW_PROJ];
+
+        let proj_view = self.proj_mat.clone() * self.view_mat();
+
+        result[0..MAT4_SIZE].clone_from_slice(&proj_view.to_bytes());
+        result[MAT4_SIZE..CAMERA_SIZE].clone_from_slice(&self.position.to_bytes_uniform());
+        result[CAMERA_SIZE..CAMERA_SIZE + MAT4_SIZE].clone_from_slice(&self.proj_mat.to_bytes());
+        result[CAMERA_SIZE + MAT4_SIZE..CAMERA_SIZE_SEP_VIEW_PROJ].clone_from_slice(&self.view_mat().to_bytes());
 
         result
     }

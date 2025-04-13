@@ -5,7 +5,7 @@ use bincode::{Decode, Encode};
 use lin_alg::f32::{Mat4, Quaternion, Vec3, Vec4};
 use wgpu::{VertexAttribute, VertexBufferLayout, VertexFormat};
 
-use crate::{camera::Camera, lighting::Lighting};
+use crate::{camera::Camera, gauss::Gaussian, lighting::Lighting};
 
 // These sizes are in bytes. We do this, since that's the data format expected by the shader.
 pub const F32_SIZE: usize = 4;
@@ -320,6 +320,7 @@ pub enum ControlScheme {
 #[derive(Clone, Debug)]
 pub struct Scene {
     pub meshes: Vec<Mesh>,
+    pub gaussians: Vec<Gaussian>,
     pub entities: Vec<Entity>,
     pub camera: Camera,
     pub lighting: Lighting,
@@ -333,6 +334,7 @@ impl Default for Scene {
     fn default() -> Self {
         Self {
             meshes: Vec::new(),
+            gaussians: Vec::new(),
             entities: Vec::new(),
             camera: Default::default(),
             lighting: Default::default(),

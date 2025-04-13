@@ -14,28 +14,28 @@ use std::{sync::Arc, time::Duration};
 use egui::Context;
 use lin_alg::f32::Vec3;
 use wgpu::{
-    self, util::{BufferInitDescriptor, DeviceExt}, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer,
-    BufferBindingType, BufferUsages, CommandEncoder, CommandEncoderDescriptor, DepthStencilState,
-    Device, FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment,
-    RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration, SurfaceTexture,
-    TextureDescriptor, TextureView, VertexBufferLayout,
-    VertexState,
+    self, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer, BufferBindingType,
+    BufferUsages, CommandEncoder, CommandEncoderDescriptor, DepthStencilState, Device,
+    FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment, RenderPassDescriptor,
+    RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration, SurfaceTexture, TextureDescriptor,
+    TextureView, VertexBufferLayout, VertexState,
+    util::{BufferInitDescriptor, DeviceExt},
 };
 use winit::{event::DeviceEvent, window::Window};
-
 use crate::{
-    gauss::{QUAD_VERTICES},
+    gauss::{GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT, QUAD_VERTICES},
     gui::GuiState,
     input::{self, InputsCommanded},
-    system::{process_engine_updates, DEPTH_FORMAT},
+    system::{DEPTH_FORMAT, process_engine_updates},
     texture::Texture,
     types::{
-        ControlScheme, EngineUpdates, InputSettings, Instance, Scene, UiLayout,
-        UiSettings, Vertex,
+        ControlScheme, EngineUpdates, INSTANCE_LAYOUT, InputSettings, Instance, Scene, UiLayout,
+        UiSettings, VERTEX_LAYOUT,
     },
 };
-use crate::gauss::{GaussianInstance, GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT};
-use crate::types::{INSTANCE_LAYOUT, VERTEX_LAYOUT};
+use crate::camera::{CAMERA_SIZE, CAMERA_SIZE_SEP_VIEW_PROJ};
+use crate::gauss::{CameraBasis, CAM_BASIS_SIZE};
+use crate::lighting::LIGHTING_SIZE_FIXED;
 
 pub const UP_VEC: Vec3 = Vec3 {
     x: 0.,
@@ -62,6 +62,7 @@ pub(crate) struct GraphicsState {
     instance_gauss_buf: Buffer,
     pub bind_groups: BindGroupData,
     pub camera_buf: Buffer,
+    pub cam_basis_buf: Buffer, // For gaussians
     lighting_buf: Buffer,
     pub pipeline_mesh: RenderPipeline,  // todo: Move to renderer.
     pub pipeline_gauss: RenderPipeline, // todo: Move to renderer.
@@ -113,6 +114,21 @@ impl GraphicsState {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
+        // For gauss
+        let cam_buf_sep_proj_view = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Camera buffer, separate proj and view."),
+            contents: &scene.camera.to_bytes_sep_proj_view(),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        // for gauss
+        let cam_basis_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("camera basis"),
+            size: size_of::<CameraBasis>() as wgpu::BufferAddress,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let lighting_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Lighting buffer"),
             contents: &scene.lighting.to_bytes(),
@@ -122,7 +138,7 @@ impl GraphicsState {
         });
         //
 
-        let bind_groups = create_bindgroups(device, &cam_buf, &lighting_buf);
+        let bind_groups = create_bindgroups(device, &cam_buf, &cam_buf_sep_proj_view, &cam_basis_buf, &lighting_buf);
 
         let depth_texture =
             Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_samples);
@@ -152,7 +168,6 @@ impl GraphicsState {
         // and read only, for alpha blending transparent meshes.
         let blend_mesh = Some(BlendState::ALPHA_BLENDING);
 
-
         let pipeline_mesh = create_render_pipeline(
             device,
             &pipeline_layout_mesh,
@@ -162,6 +177,7 @@ impl GraphicsState {
             &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
             depth_stencil_mesh,
             blend_mesh,
+            "Render pipeline mesh",
         );
 
         // We initialize instances, the instance buffer and mesh mappings in `setup_entities`.
@@ -180,11 +196,10 @@ impl GraphicsState {
         let pipeline_layout_gauss =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Gaussian pipeline layout"),
-                bind_group_layouts: &[&bind_groups.layout_cam],
+                bind_group_layouts: &[&bind_groups.layout_cam_gauss],
                 push_constant_ranges: &[],
             });
 
-        // todo: Experiment
         let depth_stencil_gauss = Some(DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: true,
@@ -202,6 +217,7 @@ impl GraphicsState {
             &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
             depth_stencil_gauss,
             Some(BlendState::ALPHA_BLENDING),
+            "Render pipeline gaussian",
         );
 
         let instance_gauss_buf = device.create_buffer_init(&BufferInitDescriptor {
@@ -231,6 +247,7 @@ impl GraphicsState {
             instance_gauss_buf,
             bind_groups,
             camera_buf: cam_buf,
+            cam_basis_buf,
             lighting_buf,
             pipeline_mesh,
             pipeline_gauss,
@@ -387,17 +404,10 @@ impl GraphicsState {
 
         self.instance_buf = instance_buf;
 
-        // todo, once working.
-        // let mut instances_gauss = Vec::new();
-        // for gauss_instance in self.scene.gaussians {
-        //     instances_gauss.push(gauss_instance);/
-        // }
-        let instances_gauss = vec![GaussianInstance {
-            center: [0., 0., 0.],
-            amplitude: 1.,
-            width: 5.,
-            _pad: [0.; 3],
-        }];
+        let mut instances_gauss = Vec::with_capacity(self.scene.gaussians.len());
+        for gauss in &self.scene.gaussians {
+            instances_gauss.push(gauss.to_instance());
+        }
 
         let mut instance_gauss_data = Vec::new();
         for instance in &instances_gauss {
@@ -419,6 +429,15 @@ impl GraphicsState {
 
     pub(crate) fn update_camera(&mut self, queue: &Queue) {
         queue.write_buffer(&self.camera_buf, 0, &self.scene.camera.to_bytes());
+
+        // Required due to not being able to take inverse of 4x3 matrices in shaders?
+        if !self.scene.gaussians.is_empty() {
+            queue.write_buffer(
+                &self.cam_basis_buf,
+                0,
+                &CameraBasis::new(self.scene.camera.orientation, self.scene.camera.view_mat()).to_bytes(),
+            );
+        }
     }
 
     pub(crate) fn update_lighting(&mut self, queue: &Queue) {
@@ -529,13 +548,16 @@ impl GraphicsState {
         }
 
         // Draw gaussians.
-        rpass.set_pipeline(&self.pipeline_gauss);
-        rpass.set_vertex_buffer(0, self.vertex_buf_quad.slice(..));
-        rpass.set_vertex_buffer(1, self.instance_gauss_buf.slice(..)); // stride = 32 B
-        // todo: Impl.
-        // rpass.draw(0..6, 0..self.scene.instances_gauss.len() as _); // 6 indices for the quad
-        rpass.draw(0..6, 0..1 as _); // 6 indices for the quad
+        if !self.scene.gaussians.is_empty() {
+            rpass.set_pipeline(&self.pipeline_gauss);
 
+            rpass.set_bind_group(0, &self.bind_groups.cam_gauss, &[]);
+
+            rpass.set_vertex_buffer(0, self.vertex_buf_quad.slice(..));
+            rpass.set_vertex_buffer(1, self.instance_gauss_buf.slice(..)); // stride = 32 B
+
+            rpass.draw(0..6, 0..self.scene.gaussians.len() as _); // 6 indices for the quad
+        }
         rpass
     }
 
@@ -656,9 +678,10 @@ fn create_render_pipeline(
     vertex_buffers: &'static [VertexBufferLayout<'static>],
     depth_stencil: Option<DepthStencilState>,
     blend: Option<BlendState>,
+    label: &str,
 ) -> RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Render pipeline"),
+        label: Some(label),
         layout: Some(layout),
 
         vertex: VertexState {
@@ -704,6 +727,8 @@ fn create_render_pipeline(
 pub(crate) struct BindGroupData {
     pub layout_cam: BindGroupLayout,
     pub cam: BindGroup,
+    pub layout_cam_gauss: BindGroupLayout,
+    pub cam_gauss: BindGroup,
     pub layout_lighting: BindGroupLayout,
     pub lighting: BindGroup,
     /// We use this for GUI.
@@ -711,7 +736,7 @@ pub(crate) struct BindGroupData {
     // pub texture: BindGroup,
 }
 
-fn create_bindgroups(device: &Device, cam_buf: &Buffer, lighting_buf: &Buffer) -> BindGroupData {
+fn create_bindgroups(device: &Device, cam_buf: &Buffer, cam_buf_sep: &Buffer, cam_basis_buf: &Buffer, lighting_buf: &Buffer) -> BindGroupData {
     // We only need vertex, not fragment info in the camera uniform.
     let layout_cam = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         entries: &[wgpu::BindGroupLayoutEntry {
@@ -722,6 +747,8 @@ fn create_bindgroups(device: &Device, cam_buf: &Buffer, lighting_buf: &Buffer) -
                 // The dynamic field indicates whether this buffer will change size or
                 // not. This is useful if we want to store an array of things in our uniforms.
                 has_dynamic_offset: false,
+                // todo: Get this working.
+                // min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE as _),
                 min_binding_size: None,
             },
             count: None,
@@ -738,6 +765,50 @@ fn create_bindgroups(device: &Device, cam_buf: &Buffer, lighting_buf: &Buffer) -
         label: Some("Camera bind group"),
     });
 
+
+    let layout_cam_gauss = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                // The dynamic field indicates whether this buffer will change size or
+                // not. This is useful if we want to store an array of things in our uniforms.
+                has_dynamic_offset: false,
+                min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE_SEP_VIEW_PROJ as _),
+            },
+            count: None,
+        },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    // The dynamic field indicates whether this buffer will change size or
+                    // not. This is useful if we want to store an array of things in our uniforms.
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(CAM_BASIS_SIZE as _),
+                },
+                count: None,
+            }],
+        label: Some("Camera gaussian bind group layout"),
+    });
+
+    let cam_gauss = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Gaussian camera bind group"),
+        layout: &layout_cam_gauss,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: cam_buf_sep.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: cam_basis_buf.as_entire_binding(),
+            },
+        ],
+    });
+
     let layout_lighting = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         entries: &[wgpu::BindGroupLayoutEntry {
             binding: 0,
@@ -745,6 +816,8 @@ fn create_bindgroups(device: &Device, cam_buf: &Buffer, lighting_buf: &Buffer) -
             ty: BindingType::Buffer {
                 ty: BufferBindingType::Storage { read_only: true }, // todo read-only?
                 has_dynamic_offset: false,
+                // todo: Get this working.
+                // min_binding_size: wgpu::BufferSize::new(LIGHTING_SIZE_FIXED as _),
                 min_binding_size: None,
             },
             count: None,
@@ -823,6 +896,8 @@ fn create_bindgroups(device: &Device, cam_buf: &Buffer, lighting_buf: &Buffer) -
     BindGroupData {
         layout_cam,
         cam,
+        layout_cam_gauss,
+        cam_gauss,
         layout_lighting,
         lighting,
         layout_texture,
