@@ -13,6 +13,7 @@
 #[cfg(feature = "app_utils")]
 pub mod app_utils;
 mod camera;
+mod gauss;
 mod graphics;
 mod gui;
 mod input;

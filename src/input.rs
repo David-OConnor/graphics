@@ -3,9 +3,7 @@
 use lin_alg::f32::{Quaternion, Vec3};
 // todo: remove Winit from this module if you can, and make it agnostic?
 use winit::event::{DeviceEvent, ElementState, MouseScrollDelta};
-use winit::{
-    keyboard::{KeyCode, PhysicalKey::Code},
-};
+use winit::keyboard::{KeyCode, PhysicalKey::Code};
 
 use crate::{
     ScrollBehavior,

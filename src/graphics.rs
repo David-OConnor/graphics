@@ -14,26 +14,28 @@ use std::{sync::Arc, time::Duration};
 use egui::Context;
 use lin_alg::f32::Vec3;
 use wgpu::{
-    self, BindGroup, BindGroupLayout, BindingType, BlendComponent, BlendFactor, BlendOperation,
-    BlendState, Buffer, BufferBindingType, BufferUsages, CommandEncoder, CommandEncoderDescriptor,
+    self, util::{BufferInitDescriptor, DeviceExt}, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer,
+    BufferBindingType, BufferUsages, CommandEncoder, CommandEncoderDescriptor, DepthStencilState,
     Device, FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment,
-    RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration,
-    SurfaceTexture, TextureDescriptor, TextureView, VertexState,
-    util::{BufferInitDescriptor, DeviceExt},
+    RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration, SurfaceTexture,
+    TextureDescriptor, TextureView, VertexBufferLayout,
+    VertexState,
 };
 use winit::{event::DeviceEvent, window::Window};
 
 use crate::{
-    gui,
+    gauss::{QUAD_VERTICES},
     gui::GuiState,
     input::{self, InputsCommanded},
-    system::{DEPTH_FORMAT, process_engine_updates},
+    system::{process_engine_updates, DEPTH_FORMAT},
     texture::Texture,
     types::{
-        ControlScheme, EngineUpdates, InputSettings, Instance, Scene, UiLayout, UiSettings, Vertex,
+        ControlScheme, EngineUpdates, InputSettings, Instance, Scene, UiLayout,
+        UiSettings, Vertex,
     },
 };
-use crate::types::GaussianInstance;
+use crate::gauss::{GaussianInstance, GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT};
+use crate::types::{INSTANCE_LAYOUT, VERTEX_LAYOUT};
 
 pub const UP_VEC: Vec3 = Vec3 {
     x: 0.,
@@ -54,13 +56,14 @@ pub const FWD_VEC: Vec3 = Vec3 {
 /// Code related to our specific engine. Buffers, texture data etc.
 pub(crate) struct GraphicsState {
     pub vertex_buf: Buffer,
+    pub vertex_buf_quad: Buffer, // For gaussians.
     pub index_buf: Buffer,
     instance_buf: Buffer,
     instance_gauss_buf: Buffer,
     pub bind_groups: BindGroupData,
     pub camera_buf: Buffer,
     lighting_buf: Buffer,
-    pub pipeline_mesh: RenderPipeline, // todo: Move to renderer.
+    pub pipeline_mesh: RenderPipeline,  // todo: Move to renderer.
     pub pipeline_gauss: RenderPipeline, // todo: Move to renderer.
     pub depth_texture: Texture,
     pub msaa_texture: Option<TextureView>, // MSAA Multisampled texture
@@ -82,6 +85,17 @@ impl GraphicsState {
         let vertex_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex buffer"),
             contents: &[], // Populated later.
+            usage: BufferUsages::VERTEX,
+        });
+
+        let mut quad_bytes = Vec::with_capacity(QUAD_VERTICES.len() * 8);
+        for q in QUAD_VERTICES {
+            quad_bytes.extend_from_slice(q.to_bytes().as_slice());
+        }
+
+        let vertex_buf_quad = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Gauss quadVertex buffer"),
+            contents: &quad_bytes,
             usage: BufferUsages::VERTEX,
         });
 
@@ -118,12 +132,26 @@ impl GraphicsState {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        let pipeline_layout_mesh =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render pipeline layout"),
-                bind_group_layouts: &[&bind_groups.layout_cam, &bind_groups.layout_lighting],
-                push_constant_ranges: &[],
-            });
+        let pipeline_layout_mesh = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Render pipeline layout"),
+            bind_group_layouts: &[&bind_groups.layout_cam, &bind_groups.layout_lighting],
+            push_constant_ranges: &[],
+        });
+
+        let depth_stencil_mesh = Some(DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        });
+
+        // todo: You should probably, eventually, make two passes for meshes. One for
+        // opaque objects, with no blending (blend_state = None), then a second pass
+        // for transparent objects. You would set depth to write only, for opaque objects,
+        // and read only, for alpha blending transparent meshes.
+        let blend_mesh = Some(BlendState::ALPHA_BLENDING);
+
 
         let pipeline_mesh = create_render_pipeline(
             device,
@@ -131,26 +159,9 @@ impl GraphicsState {
             shader_mesh,
             surface_cfg,
             msaa_samples,
-        );
-
-        let shader_mesh = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Graphics shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        });
-
-        let pipeline_layout_gauss =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Gaussian pipeline layout"),
-                bind_group_layouts: &[&bind_groups.layout_cam],
-                push_constant_ranges: &[],
-            });
-
-        let pipeline_gauss = create_render_pipeline(
-            device,
-            &pipeline_layout_mesh,
-            shader_mesh,
-            surface_cfg,
-            msaa_samples,
+            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            depth_stencil_mesh,
+            blend_mesh,
         );
 
         // We initialize instances, the instance buffer and mesh mappings in `setup_entities`.
@@ -160,6 +171,38 @@ impl GraphicsState {
             contents: &[], // empty on init
             usage: BufferUsages::VERTEX,
         });
+
+        let shader_gauss = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Graphics shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader_gauss.wgsl").into()),
+        });
+
+        let pipeline_layout_gauss =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Gaussian pipeline layout"),
+                bind_group_layouts: &[&bind_groups.layout_cam],
+                push_constant_ranges: &[],
+            });
+
+        // todo: Experiment
+        let depth_stencil_gauss = Some(DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        });
+
+        let pipeline_gauss = create_render_pipeline(
+            device,
+            &pipeline_layout_gauss,
+            shader_gauss,
+            surface_cfg,
+            msaa_samples,
+            &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
+            depth_stencil_gauss,
+            Some(BlendState::ALPHA_BLENDING),
+        );
 
         let instance_gauss_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Gaussian Instance buffer"),
@@ -182,6 +225,7 @@ impl GraphicsState {
 
         let mut result = Self {
             vertex_buf,
+            vertex_buf_quad,
             index_buf,
             instance_buf,
             instance_gauss_buf,
@@ -282,6 +326,8 @@ impl GraphicsState {
         });
 
         self.vertex_buf = vertex_buf;
+        // Note: Gauss vertex buf is static; we set it up at init, and don't change it.
+
         self.index_buf = index_buf;
     }
 
@@ -332,6 +378,15 @@ impl GraphicsState {
             }
         }
 
+        // We can't update using a queue due to buffer size mismatches.
+        let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Instance buffer"),
+            contents: &instance_data,
+            usage: BufferUsages::VERTEX,
+        });
+
+        self.instance_buf = instance_buf;
+
         // todo, once working.
         // let mut instances_gauss = Vec::new();
         // for gauss_instance in self.scene.gaussians {
@@ -350,15 +405,6 @@ impl GraphicsState {
                 instance_gauss_data.push(byte);
             }
         }
-
-        // We can't update using a queue due to buffer size mismatches.
-        let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Instance buffer"),
-            contents: &instance_data,
-            usage: BufferUsages::VERTEX,
-        });
-
-        self.instance_buf = instance_buf;
 
         let instance_gauss_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Gaussian Instance buffer"),
@@ -482,6 +528,14 @@ impl GraphicsState {
             start_ind += mesh.indices.len() as u32;
         }
 
+        // Draw gaussians.
+        rpass.set_pipeline(&self.pipeline_gauss);
+        rpass.set_vertex_buffer(0, self.vertex_buf_quad.slice(..));
+        rpass.set_vertex_buffer(1, self.instance_gauss_buf.slice(..)); // stride = 32 B
+        // todo: Impl.
+        // rpass.draw(0..6, 0..self.scene.instances_gauss.len() as _); // 6 indices for the quad
+        rpass.draw(0..6, 0..1 as _); // 6 indices for the quad
+
         rpass
     }
 
@@ -591,22 +645,27 @@ impl GraphicsState {
     }
 }
 
-/// Create render pipelines.
+/// Create a render pipeline. Configurable by parameters to support multiple use cases. E.g., both
+/// meshes and gaussians.
 fn create_render_pipeline(
     device: &Device,
     layout: &wgpu::PipelineLayout,
     shader: wgpu::ShaderModule,
     config: &SurfaceConfiguration,
     sample_count: u32,
+    vertex_buffers: &'static [VertexBufferLayout<'static>],
+    depth_stencil: Option<DepthStencilState>,
+    blend: Option<BlendState>,
 ) -> RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render pipeline"),
         layout: Some(layout),
+
         vertex: VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
             compilation_options: Default::default(),
-            buffers: &[Vertex::desc(), Instance::desc()],
+            buffers: vertex_buffers,
         },
         fragment: Some(FragmentState {
             module: &shader,
@@ -615,18 +674,7 @@ fn create_render_pipeline(
             // This configures with alpha blending. (?)
             targets: &[Some(wgpu::ColorTargetState {
                 format: config.format, // Ensure this is a format with alpha (e.g., `wgpu::TextureFormat::Rgba8Unorm`)
-                blend: Some(BlendState {
-                    color: BlendComponent {
-                        src_factor: BlendFactor::SrcAlpha,
-                        dst_factor: BlendFactor::OneMinusSrcAlpha,
-                        operation: BlendOperation::Add,
-                    },
-                    alpha: BlendComponent {
-                        src_factor: BlendFactor::One,
-                        dst_factor: BlendFactor::OneMinusSrcAlpha,
-                        operation: BlendOperation::Add,
-                    },
-                }),
+                blend,
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
@@ -640,13 +688,7 @@ fn create_render_pipeline(
             conservative: false,
         },
 
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
+        depth_stencil,
         multisample: wgpu::MultisampleState {
             count: sample_count, // Enable MSAA
             mask: !0,
