@@ -1,9 +1,7 @@
 //! This module contains code specific to gaussians. Not all gauss-specific code is here though.
 
-use lin_alg::f32::{Mat4, Quaternion, Vec3};
+use lin_alg::f32::{Mat4, Vec3};
 use wgpu::{VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode};
-
-use crate::{RIGHT_VEC, UP_VEC};
 
 pub(crate) const CAM_BASIS_SIZE: usize = 32; // Includes padding.
 

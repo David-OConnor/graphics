@@ -13,11 +13,18 @@ use std::{sync::Arc, time::Duration};
 
 use egui::Context;
 use lin_alg::f32::Vec3;
-use wgpu::{self, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer, BufferBindingType, BufferUsages, CommandEncoder, CommandEncoderDescriptor, DepthStencilState, Device, FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration, SurfaceTexture, TextureDescriptor, TextureView, VertexBufferLayout, VertexState, util::{BufferInitDescriptor, DeviceExt}, BlendComponent, BlendFactor, BlendOperation};
+use wgpu::{
+    self, BindGroup, BindGroupLayout, BindingType, BlendComponent, BlendFactor, BlendOperation,
+    BlendState, Buffer, BufferBindingType, BufferUsages, CommandEncoder, CommandEncoderDescriptor,
+    DepthStencilState, Device, FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment,
+    RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration,
+    SurfaceTexture, TextureDescriptor, TextureView, VertexBufferLayout, VertexState,
+    util::{BufferInitDescriptor, DeviceExt},
+};
 use winit::{event::DeviceEvent, window::Window};
 
 use crate::{
-    camera::{CAMERA_SIZE},
+    camera::CAMERA_SIZE,
     gauss::{CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT, QUAD_VERTICES},
     gui::GuiState,
     input::{self, InputsCommanded},
@@ -106,13 +113,6 @@ impl GraphicsState {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        // For gauss
-        // let cam_buf_sep_proj_view = device.create_buffer_init(&BufferInitDescriptor {
-        //     label: Some("Camera buffer, separate proj and view."),
-        //     contents: &scene.camera.to_bytes_sep_proj_view(),
-        //     usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        // });
-
         // for gauss
         let cam_basis_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("camera basis"),
@@ -130,13 +130,7 @@ impl GraphicsState {
         });
         //
 
-        let bind_groups = create_bindgroups(
-            device,
-            &cam_buf,
-            // &cam_buf_sep_proj_view,
-            &cam_basis_buf,
-            &lighting_buf,
-        );
+        let bind_groups = create_bindgroups(device, &cam_buf, &cam_basis_buf, &lighting_buf);
 
         let depth_texture =
             Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_samples);
@@ -789,7 +783,6 @@ fn create_bindgroups(
                     // The dynamic field indicates whether this buffer will change size or
                     // not. This is useful if we want to store an array of things in our uniforms.
                     has_dynamic_offset: false,
-                    // min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE_SEP_VIEW_PROJ as _),
                     min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE as _),
                 },
                 count: None,

@@ -238,6 +238,14 @@ pub fn render(state: State) {
             Mesh::from_obj_file("sphere.obj"),
         ],
         entities: Vec::new(), // updated below.
+        gaussians: vec![
+            Gaussian {
+                center: Vec3::new_zero(),
+                amplitude: 1.,
+                width: 3.,
+                color: [1., 0., 0.5, 1.],
+            }
+        ],
         camera: Camera {
             fov_y: TAU / 8.,
             position: Vec3::new(0., 10., -20.),

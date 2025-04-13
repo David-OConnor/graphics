@@ -1,10 +1,6 @@
 struct Camera {
     proj_view : mat4x4<f32>,
     position  : vec4<f32>,
-    // todo: If you don't use sep proj and view, remove them, and use the standard
-    // todo camera layout, vice the custom one. Remove the custom one.
-//    proj      : mat4x4<f32>,
-//    view      : mat4x4<f32>,
 };
 
 // Can't directly calculate the required inverse on CPU.
@@ -65,7 +61,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
     output.clip_position = clip_pos;
     // Pass the 2D offset in world-plane coordinates to fragment (for distance calc)
-    output.local_offset = input.pos * input.width;
+//    output.local_offset = input.pos * input.width;
+    output.local_offset = input.pos * input.width * cutoff_thresh;
     // Pass through instance attributes needed in fragment
     output.inst_color = input.color;
     output.inst_amplitude = input.amplitude;
@@ -87,9 +84,7 @@ fn fs_main(input: FragmentInput) -> @location(0) vec4<f32> {
     let intensity = input.inst_amplitude * exp(-r_sq / (2.0 * sigma * sigma));
 
     // Modulate base color by intensity (premultiplied alpha)
-    var color = input.inst_color;
-
-    color *= intensity;
+    var color = input.inst_color * intensity;
 
     return color;
 }
