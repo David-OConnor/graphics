@@ -48,7 +48,10 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     let up    = cameraBasis.up;
 
     // Treat `width` as the quad's half-size (so quad spans 2*width in world units)
-    let cutoff_thresh = 3.; // This affects saturation, and when the gauss stops drawing. 3. is a good efault.
+
+     // This thresh affects saturation, and when the gauss stops drawing. 3. is a good default.
+     // Higher values will draw fainter areas.
+    let cutoff_thresh = 3.5;
     let offset_world = input.pos.x * right * input.width * cutoff_thresh +
                        input.pos.y * up    * input.width * cutoff_thresh;
 

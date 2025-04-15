@@ -194,7 +194,8 @@ impl GraphicsState {
 
         let depth_stencil_gauss = Some(DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: true,
+            // Seems to be required to be false to prevent gaussians from popping in and out.
+            depth_write_enabled: false,
             depth_compare: wgpu::CompareFunction::Less,
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
@@ -208,19 +209,20 @@ impl GraphicsState {
             msaa_samples,
             &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
             depth_stencil_gauss,
-            // Some(BlendState::ALPHA_BLENDING),
-            Some(BlendState {
-                color: BlendComponent {
-                    src_factor: BlendFactor::One,
-                    dst_factor: BlendFactor::One,
-                    operation: BlendOperation::Add,
-                },
-                alpha: BlendComponent {
-                    src_factor: BlendFactor::One,
-                    dst_factor: BlendFactor::One,
-                    operation: BlendOperation::Add,
-                },
-            }),
+            // todo These two blend styles approaches produce noticibly different results. Experiment.
+            Some(BlendState::ALPHA_BLENDING),
+            // Some(BlendState {
+            //     color: BlendComponent {
+            //         src_factor: BlendFactor::One,
+            //         dst_factor: BlendFactor::One,
+            //         operation: BlendOperation::Add,
+            //     },
+            //     alpha: BlendComponent {
+            //         src_factor: BlendFactor::One,
+            //         dst_factor: BlendFactor::One,
+            //         operation: BlendOperation::Add,
+            //     },
+            // }),
             "Render pipeline gaussian",
         );
 
@@ -747,20 +749,22 @@ fn create_bindgroups(
     cam_basis_buf: &Buffer,
     lighting_buf: &Buffer,
 ) -> BindGroupData {
+    let cam_entry = wgpu::BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            // The dynamic field indicates whether this buffer will change size or
+            // not. This is useful if we want to store an array of things in our uniforms.
+            has_dynamic_offset: false,
+            min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE as _),
+        },
+        count: None,
+    };
+
     // We only need vertex, not fragment info in the camera uniform.
     let layout_cam = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                // The dynamic field indicates whether this buffer will change size or
-                // not. This is useful if we want to store an array of things in our uniforms.
-                has_dynamic_offset: false,
-                min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE as _),
-            },
-            count: None,
-        }],
+        entries: &[cam_entry.clone()],
         label: Some("Camera bind group layout"),
     });
 
@@ -775,18 +779,7 @@ fn create_bindgroups(
 
     let layout_cam_gauss = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    // The dynamic field indicates whether this buffer will change size or
-                    // not. This is useful if we want to store an array of things in our uniforms.
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(CAMERA_SIZE as _),
-                },
-                count: None,
-            },
+            cam_entry,
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
                 visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,

@@ -86,10 +86,20 @@ pub struct Gaussian {
 }
 
 impl Gaussian {
+    pub fn new(center: Vec3, amplitude: f32, width: f32, color: (f32, f32, f32)) -> Self {
+        Self {
+            center,
+            amplitude,
+            width,
+            color: [color.0, color.1, color.2, 1.],
+        }
+    }
+
     pub(crate) fn to_instance(&self) -> GaussianInstance {
         GaussianInstance {
             center: self.center.to_arr(),
-            amplitude: self.amplitude,
+            // We may have negative-amplitude in practice, but will always render as a positive.
+            amplitude: self.amplitude.abs(),
             width: self.width,
             color: self.color,
             _pad: [0.; 3],
