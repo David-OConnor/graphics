@@ -17,21 +17,24 @@ license = "MIT"
 
 
 [dependencies]
-wgpu = "^24.0.1"
-#lin_alg = { version = "^1.1.6", features = ["computer_graphics"] }
-lin_alg = { path = "../lin_alg", features = ["computer_graphics"] }
+wgpu = "24.0.1"
+lin_alg = { version = "1.1.8", features = ["computer_graphics"] }
 
-pollster = "^0.4.0"  # For 2 WGPU init fns that use async.
+pollster = "0.4.0"  # For 2 WGPU init fns that use async.
 
-image = "^0.25.2" # For loading textures
-obj = "^0.10.2"  # For loading OBJ meshes.
+image = "0.25.2" # For loading textures
+obj = "0.10.2"  # For loading OBJ meshes.
 
-winit = "^0.30.5"
-egui = "^0.31.0"
-egui-wgpu = "^0.31.0"
-egui-winit = "^0.31.0"
+winit = "0.30.10"
+egui = "0.31.1"
+egui-wgpu = "0.31.1"
+egui-winit = "0.31.1"
 
-bincode = { version = "^2.0.1", optional = true } # For our save/load util.
+bincode = { version = "2.0.1", optional = true } # For our save/load util.
+
+
+[patch.crates-io]
+lin_alg = { path = "../lin_alg" }
 
 
 [features]

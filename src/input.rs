@@ -320,7 +320,20 @@ pub fn adjust_camera_arc(
     let mut movement_vec = Vec3::new_zero();
     let mut rotation = Quaternion::new_identity();
 
-    // todo: Combine this fn with adjust_free, and accept ControlScheme as a param?
+    // todo: Combine this fn with adjust_free, and accept ControlScheme as a param.
+
+    // Inverse of free
+    let rotate_key_amt = -input_settings.rotate_key_sens * dt;
+
+    if inputs.roll_cw {
+        let fwd = cam.orientation.rotate_vec(FWD_VEC);
+        rotation = Quaternion::from_axis_angle(fwd, -rotate_key_amt);
+        cam_rotated = true;
+    } else if inputs.roll_ccw {
+        let fwd = cam.orientation.rotate_vec(FWD_VEC);
+        rotation = Quaternion::from_axis_angle(fwd, rotate_key_amt);
+        cam_rotated = true;
+    }
 
     let mut skip_move_vec = false;
     // Only rotate if "free look" is active and the mouse moved enough:

@@ -50,7 +50,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     // Treat `width` as the quad's half-size (so quad spans 2*width in world units)
 
      // This thresh affects saturation, and when the gauss stops drawing. 3. is a good default.
-     // Higher values will draw fainter areas.
+     // Higher values will draw fainter areas; less likely to show artifacts from the square cutoff.
     let cutoff_thresh = 3.5;
     let offset_world = input.pos.x * right * input.width * cutoff_thresh +
                        input.pos.y * up    * input.width * cutoff_thresh;
@@ -84,7 +84,8 @@ fn fs_main(input: FragmentInput) -> @location(0) vec4<f32> {
     let sigma = input.inst_width;
 
     // intensity = amplitude * exp(-(r^2) / (2 * sigma^2))
-    let intensity = input.inst_amplitude * exp(-r_sq / (2.0 * sigma * sigma));
+    let amp = input.inst_amplitude * 0.2; // todo: Experimenting. Maybe do this CPU-side.
+    let intensity = amp * exp(-r_sq / (2.0 * sigma * sigma));
 
     // Modulate base color by intensity (premultiplied alpha)
     var color = input.inst_color * intensity;
