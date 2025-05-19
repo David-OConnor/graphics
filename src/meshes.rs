@@ -263,8 +263,13 @@ impl Mesh {
         }
 
         // Flatten the faces into the indices vector.
-        for face in faces {
-            indices.extend_from_slice(&face);
+        for face in &mut faces {
+            if subdivisions % 2 == 0 {
+                let first = face[0];
+                face[0] = face[1];
+                face[1] = first;
+            }
+            indices.extend_from_slice(face);
         }
 
         Self {
