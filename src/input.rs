@@ -209,6 +209,17 @@ fn handle_scroll(
     }
 }
 
+/// Used internally for inputs, and externally, e.g. to command an arc rotation.
+pub fn arc_rotation(cam: &mut Camera, axis: Vec3, amt: f32, center: Vec3,) {
+    let rotation = Quaternion::from_axis_angle(axis, amt);
+
+    cam.orientation = (rotation * cam.orientation).to_normalized();
+
+    let dist = (cam.position - center).magnitude();
+    // Update position based on the new orientation.
+    cam.position = center - cam.orientation.rotate_vec(FWD_VEC) * dist;
+}
+
 /// Adjust the camera orientation and position. Return if there was a change, so we know to update the buffer.
 /// For the free (6DOF first-person) camera.
 pub fn adjust_camera_free(
@@ -293,7 +304,7 @@ pub fn adjust_camera_free(
     // todo: Handle middleclick + drag here too. Move `mol_dock`'s impl here.
 
     if cam_rotated {
-        cam.orientation = rotation * cam.orientation;
+        cam.orientation = (rotation * cam.orientation).to_normalized();
     }
 
     if cam_moved {
@@ -368,8 +379,11 @@ pub fn adjust_camera_arc(
 
     // todo: Handle middleclick + drag here too. Move `mol_dock`'s impl here.
 
+    // note: We are not using our `arc_roation` fn here due to needing to handle both x and y. Hmm.
+    // arc_rotation(cam, axis, amt, center);
+
     if cam_rotated {
-        cam.orientation = rotation * cam.orientation;
+        cam.orientation = (rotation * cam.orientation).to_normalized();
     }
 
     if cam_moved && !skip_move_vec {
