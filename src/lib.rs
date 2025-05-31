@@ -27,7 +27,7 @@ mod window;
 pub use camera::Camera;
 pub use gauss::Gaussian;
 pub use graphics::{FWD_VEC, RIGHT_VEC, UP_VEC};
-pub use input::{InputsCommanded, adjust_camera_free};
+pub use input::{InputsCommanded, adjust_camera_free, arc_rotation};
 pub use lighting::{LightType, Lighting, PointLight};
 pub use system::run;
 pub use types::{
