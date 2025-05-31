@@ -210,7 +210,7 @@ fn handle_scroll(
 }
 
 /// Used internally for inputs, and externally, e.g. to command an arc rotation.
-pub fn arc_rotation(cam: &mut Camera, axis: Vec3, amt: f32, center: Vec3,) {
+pub fn arc_rotation(cam: &mut Camera, axis: Vec3, amt: f32, center: Vec3) {
     let rotation = Quaternion::from_axis_angle(axis, amt);
 
     cam.orientation = (rotation * cam.orientation).to_normalized();

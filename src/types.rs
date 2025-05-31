@@ -244,7 +244,10 @@ pub struct Mesh {
 /// Represents an entity in the world. This is not fundamental to the WGPU system.
 #[derive(Clone, Debug)]
 pub struct Entity {
-    pub id: usize,
+    /// Up to the application.
+    pub id: u32,
+    /// Up to the application
+    pub class: u32,
     /// Index of the mesh this entity references. (or perhaps its index?)
     pub mesh: usize,
     /// Position in the world, relative to world origin
@@ -264,6 +267,7 @@ impl Default for Entity {
     fn default() -> Self {
         Self {
             id: 0,
+            class: 0,
             mesh: 0,
             position: Vec3::new_zero(),
             orientation: Quaternion::new_identity(),
@@ -286,7 +290,8 @@ impl Entity {
         shinyness: f32,
     ) -> Self {
         Self {
-            id: 0, // todo: Determine how you'll handle this.
+            id: 0,
+            class: 0,
             mesh,
             position,
             orientation,
