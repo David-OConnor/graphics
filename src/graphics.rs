@@ -55,15 +55,21 @@ pub const FWD_VEC: Vec3 = Vec3 {
 /// Code related to our specific engine. Buffers, texture data etc.
 pub(crate) struct GraphicsState {
     pub vertex_buf: Buffer,
+    // pub vertex_buf_transparent: Buffer,
     pub vertex_buf_quad: Buffer, // For gaussians.
     pub index_buf: Buffer,
+    // pub index_buf_transparent: Buffer,
     instance_buf: Buffer,
+    instance_buf_transparent: Buffer,
     instance_gauss_buf: Buffer,
     pub bind_groups: BindGroupData,
     pub camera_buf: Buffer,
     pub cam_basis_buf: Buffer, // For gaussians
     lighting_buf: Buffer,
+    /// For opaque meshes
     pub pipeline_mesh: RenderPipeline,  // todo: Move to renderer.
+    /// For transparent meshes: Disable back-culling.
+    pub pipeline_mesh_transparent: RenderPipeline,  // todo: Move to renderer.
     pub pipeline_gauss: RenderPipeline, // todo: Move to renderer.
     pub depth_texture: Texture,
     pub msaa_texture: Option<TextureView>, // MSAA Multisampled texture
@@ -71,6 +77,7 @@ pub(crate) struct GraphicsState {
     // staging_belt: wgpu::util::StagingBelt, // todo: Do we want this? Probably in sys, not here.
     pub scene: Scene,
     mesh_mappings: Vec<(i32, u32, u32)>,
+    mesh_mappings_transparent: Vec<(i32, u32, u32)>,
     pub window: Arc<Window>,
 }
 
@@ -146,36 +153,59 @@ impl GraphicsState {
             push_constant_ranges: &[],
         });
 
-        let depth_stencil_mesh = Some(DepthStencilState {
+        let depth_stencil_mesh = DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: true,
             depth_compare: wgpu::CompareFunction::Less,
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
-        });
+        };
+
+        let depth_stencil_mesh_transparent = DepthStencilState {
+            depth_write_enabled: false,
+            ..depth_stencil_mesh.clone()
+        };
 
         // todo: You should probably, eventually, make two passes for meshes. One for
         // opaque objects, with no blending (blend_state = None), then a second pass
         // for transparent objects. You would set depth to write only, for opaque objects,
         // and read only, for alpha blending transparent meshes.
-        let blend_mesh = Some(BlendState::ALPHA_BLENDING);
 
         let pipeline_mesh = create_render_pipeline(
+            device,
+            &pipeline_layout_mesh,
+            shader_mesh.clone(),
+            surface_cfg,
+            msaa_samples,
+            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            Some(depth_stencil_mesh),
+            None,
+            "Render pipeline mesh opaque",
+        );
+
+        // Separate mesh for transparent meshes, so we disable back culling.
+        let pipeline_mesh_transparent = create_render_pipeline(
             device,
             &pipeline_layout_mesh,
             shader_mesh,
             surface_cfg,
             msaa_samples,
             &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
-            depth_stencil_mesh,
-            blend_mesh,
-            "Render pipeline mesh",
+            Some(depth_stencil_mesh_transparent),
+            Some(BlendState::ALPHA_BLENDING),
+            "Render pipeline mesh transparent",
         );
 
         // We initialize instances, the instance buffer and mesh mappings in `setup_entities`.
         // let instances = Vec::new();
         let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Instance buffer"),
+            contents: &[], // empty on init
+            usage: BufferUsages::VERTEX,
+        });
+
+        let instance_buf_transparent = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Instance buffer transparent"),
             contents: &[], // empty on init
             usage: BufferUsages::VERTEX,
         });
@@ -234,6 +264,7 @@ impl GraphicsState {
 
         // Placeholder value
         let mesh_mappings = Vec::new();
+        let mesh_mappings_transparent = Vec::new();
 
         // todo: Logical (scaling by device?) vs physical pixels
         // let window_size = winit::dpi::LogicalSize::new(scene.window_size.0, scene.window_size.1);
@@ -250,18 +281,21 @@ impl GraphicsState {
             vertex_buf_quad,
             index_buf,
             instance_buf,
+            instance_buf_transparent,
             instance_gauss_buf,
             bind_groups,
             camera_buf: cam_buf,
             cam_basis_buf,
             lighting_buf,
             pipeline_mesh,
+            pipeline_mesh_transparent,
             pipeline_gauss,
             depth_texture,
             // staging_belt: wgpu::util::StagingBelt::new(0x100),
             scene,
             inputs_commanded: Default::default(),
             mesh_mappings,
+            mesh_mappings_transparent,
             window,
             msaa_texture,
         };
@@ -354,25 +388,30 @@ impl GraphicsState {
         self.index_buf = index_buf;
     }
 
-    /// Currently, sets up entities (And the associated instance buf), but doesn't change
+    /// Sets up entities (And the associated instance buf), but doesn't change
     /// meshes, lights, or the camera. The vertex and index buffers aren't changed; only the instances.
     pub(crate) fn setup_entities(&mut self, device: &Device) {
         let mut instances = Vec::new();
+        let mut instances_transparent = Vec::new();
 
         let mut mesh_mappings = Vec::new();
+        let mut mesh_mappings_transparent = Vec::new();
 
         let mut vertex_start_this_mesh = 0;
         let mut instance_start_this_mesh = 0;
+        let mut instance_start_this_mesh_transparent = 0;
 
         for (i, mesh) in self.scene.meshes.iter().enumerate() {
             let mut instance_count_this_mesh = 0;
+            let mut instance_count_this_mesh_transparent = 0;
+
             for entity in self.scene.entities.iter().filter(|e| e.mesh == i) {
                 let scale = match entity.scale_partial {
                     Some(s) => s,
                     None => Vec3::new(entity.scale, entity.scale, entity.scale),
                 };
 
-                instances.push(Instance {
+                let instance = Instance {
                     // todo: entity into method?
                     position: entity.position,
                     orientation: entity.orientation,
@@ -380,24 +419,54 @@ impl GraphicsState {
                     color: Vec3::new(entity.color.0, entity.color.1, entity.color.2),
                     opacity: entity.opacity,
                     shinyness: entity.shinyness,
-                });
-                instance_count_this_mesh += 1;
+                };
+
+                if entity.opacity < 0.99 {
+                    instances_transparent.push(instance);
+
+                    mesh_mappings_transparent.push((
+                        vertex_start_this_mesh,
+                        instance_start_this_mesh_transparent,
+                        instance_count_this_mesh_transparent,
+                    ));
+
+                    instance_count_this_mesh_transparent += 1;
+                } else {
+                    instances.push(instance);
+
+                    mesh_mappings.push((
+                        vertex_start_this_mesh,
+                        instance_start_this_mesh,
+                        instance_count_this_mesh,
+                    ));
+
+                    instance_count_this_mesh += 1;
+                }
             }
 
-            mesh_mappings.push((
-                vertex_start_this_mesh,
-                instance_start_this_mesh,
-                instance_count_this_mesh,
-            ));
+            // mesh_mappings.push((
+            //     vertex_start_this_mesh,
+            //     instance_start_this_mesh,
+            //     instance_count_this_mesh,
+            // ));
 
             vertex_start_this_mesh += mesh.vertices.len() as i32;
+
             instance_start_this_mesh += instance_count_this_mesh;
+            instance_start_this_mesh_transparent += instance_count_this_mesh_transparent;
         }
 
         let mut instance_data = Vec::new();
         for instance in &instances {
             for byte in instance.to_bytes() {
                 instance_data.push(byte);
+            }
+        }
+
+        let mut instance_data_transparent = Vec::new();
+        for instance in &instances_transparent {
+            for byte in instance.to_bytes() {
+                instance_data_transparent.push(byte);
             }
         }
 
@@ -408,7 +477,14 @@ impl GraphicsState {
             usage: BufferUsages::VERTEX,
         });
 
+        let instance_buf_transparent = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Instance buffer transparent"),
+            contents: &instance_data_transparent,
+            usage: BufferUsages::VERTEX,
+        });
+
         self.instance_buf = instance_buf;
+        self.instance_buf_transparent = instance_buf_transparent;
 
         let mut instances_gauss = Vec::with_capacity(self.scene.gaussians.len());
         for gauss in &self.scene.gaussians {
@@ -431,6 +507,7 @@ impl GraphicsState {
         self.instance_gauss_buf = instance_gauss_buf;
 
         self.mesh_mappings = mesh_mappings;
+        self.mesh_mappings_transparent = mesh_mappings_transparent;
     }
 
     pub(crate) fn update_camera(&mut self, queue: &Queue) {
@@ -525,37 +602,44 @@ impl GraphicsState {
 
         rpass.set_viewport(x, y, eff_width, eff_height, 0., 1.);
 
-        rpass.set_pipeline(&self.pipeline_mesh);
+        // Make a render pass for opaque meshes, and transparent ones. We separate them so as to only
+        // back-cull opaque ones.
+        for (inst_buf, pipeline, mappings) in [(&self.instance_buf, &self.pipeline_mesh, &self.mesh_mappings),
+            (&self.instance_buf_transparent, &self.pipeline_mesh_transparent, &self.mesh_mappings_transparent)]
+            .into_iter()
+        {
+            if inst_buf.size() == 0 { continue; }
 
-        rpass.set_bind_group(0, &self.bind_groups.cam, &[]);
-        rpass.set_bind_group(1, &self.bind_groups.lighting, &[]);
+            rpass.set_pipeline(pipeline);
+            rpass.set_bind_group(0, &self.bind_groups.cam, &[]);
+            rpass.set_bind_group(1, &self.bind_groups.lighting, &[]);
 
-        rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
-        // Without this size check, the instance buffer slice fails, and we get a panic.
-        if self.instance_buf.size() == 0 {
-            return rpass;
-        }
+            rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
+            rpass.set_vertex_buffer(1, inst_buf.slice(..));
+            rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
 
-        rpass.set_vertex_buffer(1, self.instance_buf.slice(..));
-        rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
+            let mut start_ind = 0;
+            for (i, mesh) in self.scene.meshes.iter().enumerate() {
+                let (vertex_start_this_mesh, instance_start_this_mesh, instance_count_this_mesh) =
+                    mappings[i];
 
-        let mut start_ind = 0;
-        for (i, mesh) in self.scene.meshes.iter().enumerate() {
-            let (vertex_start_this_mesh, instance_start_this_mesh, instance_count_this_mesh) =
-                self.mesh_mappings[i];
+                if instance_count_this_mesh == 0 {
+                    start_ind += mesh.indices.len() as u32;
+                }
 
-            rpass.draw_indexed(
-                start_ind..start_ind + mesh.indices.len() as u32,
-                vertex_start_this_mesh,
-                instance_start_this_mesh..instance_start_this_mesh + instance_count_this_mesh,
-            );
+                rpass.draw_indexed(
+                    start_ind..start_ind + mesh.indices.len() as u32,
+                    vertex_start_this_mesh,
+                    instance_start_this_mesh..instance_start_this_mesh + instance_count_this_mesh,
+                );
 
-            start_ind += mesh.indices.len() as u32;
+                start_ind += mesh.indices.len() as u32;
+            }
         }
 
         // Draw gaussians.
-        if !self.scene.gaussians.is_empty() {
-            rpass.set_pipeline(&self.pipeline_gauss);
+        if ! self .scene.gaussians.is_empty() {
+            rpass.set_pipeline( & self.pipeline_gauss);
 
             rpass.set_bind_group(0, &self.bind_groups.cam_gauss, &[]);
 
@@ -686,6 +770,12 @@ fn create_render_pipeline(
     blend: Option<BlendState>,
     label: &str,
 ) -> RenderPipeline {
+    let cull_mode = if blend.is_some() {
+        None
+    } else {
+        Some(wgpu::Face::Back)
+    };
+
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
         layout: Some(layout),
@@ -711,7 +801,7 @@ fn create_render_pipeline(
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
-            cull_mode: Some(wgpu::Face::Back),
+            cull_mode,
             unclipped_depth: false,
             polygon_mode: wgpu::PolygonMode::Fill,
             conservative: false,
