@@ -14,11 +14,11 @@ use std::{sync::Arc, time::Duration};
 use egui::Context;
 use lin_alg::f32::Vec3;
 use wgpu::{
-    self, BindGroup, BindGroupLayout, BindingType, BlendComponent, BlendFactor, BlendOperation,
-    BlendState, Buffer, BufferBindingType, BufferUsages, CommandEncoder, CommandEncoderDescriptor,
-    DepthStencilState, Device, FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment,
-    RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration,
-    SurfaceTexture, TextureDescriptor, TextureView, VertexBufferLayout, VertexState,
+    self, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer, BufferBindingType,
+    BufferUsages, CommandEncoder, CommandEncoderDescriptor, DepthStencilState, Device, Face,
+    FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment, RenderPassDescriptor,
+    RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration, SurfaceTexture, TextureDescriptor,
+    TextureView, VertexBufferLayout, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 use winit::{event::DeviceEvent, window::Window};
@@ -31,8 +31,8 @@ use crate::{
     system::{DEPTH_FORMAT, process_engine_updates},
     texture::Texture,
     types::{
-        ControlScheme, EngineUpdates, INSTANCE_LAYOUT, InputSettings, Instance, Scene, UiLayout,
-        UiSettings, VERTEX_LAYOUT,
+        ControlScheme, EngineUpdates, INSTANCE_LAYOUT, INSTANCE_SIZE, InputSettings, Instance,
+        Scene, UiLayout, UiSettings, VERTEX_LAYOUT,
     },
 };
 
@@ -61,16 +61,17 @@ pub(crate) struct GraphicsState {
     // pub index_buf_transparent: Buffer,
     instance_buf: Buffer,
     instance_buf_transparent: Buffer,
-    instance_gauss_buf: Buffer,
+    instance_buf_gauss: Buffer,
     pub bind_groups: BindGroupData,
     pub camera_buf: Buffer,
     pub cam_basis_buf: Buffer, // For gaussians
     lighting_buf: Buffer,
     /// For opaque meshes
-    pub pipeline_mesh: RenderPipeline,  // todo: Move to renderer.
+    pub pipeline_mesh: RenderPipeline, // todo: Move to renderer.
     /// For transparent meshes: Disable back-culling.
-    pub pipeline_mesh_transparent: RenderPipeline,  // todo: Move to renderer.
-    pub pipeline_gauss: RenderPipeline, // todo: Move to renderer.
+    pub pipeline_mesh_transparent: RenderPipeline, // todo: Move to renderer.
+    pub pipeline_mesh_transparent_back: RenderPipeline, // todo: Move to renderer.
+    pub pipeline_gauss: RenderPipeline,                 // todo: Move to renderer.
     pub depth_texture: Texture,
     pub msaa_texture: Option<TextureView>, // MSAA Multisampled texture
     pub inputs_commanded: InputsCommanded,
@@ -180,6 +181,7 @@ impl GraphicsState {
             &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
             Some(depth_stencil_mesh),
             None,
+            Some(Face::Back),
             "Render pipeline mesh opaque",
         );
 
@@ -187,13 +189,27 @@ impl GraphicsState {
         let pipeline_mesh_transparent = create_render_pipeline(
             device,
             &pipeline_layout_mesh,
-            shader_mesh,
+            shader_mesh.clone(),
             surface_cfg,
             msaa_samples,
             &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
-            Some(depth_stencil_mesh_transparent),
+            Some(depth_stencil_mesh_transparent.clone()),
             Some(BlendState::ALPHA_BLENDING),
+            Some(Face::Back),
             "Render pipeline mesh transparent",
+        );
+
+        let pipeline_mesh_transparent_back = create_render_pipeline(
+            device,
+            &pipeline_layout_mesh,
+            shader_mesh.clone(),
+            surface_cfg,
+            msaa_samples,
+            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            Some(depth_stencil_mesh_transparent), // depth-write OFF
+            Some(BlendState::ALPHA_BLENDING),     // still alpha–blend
+            Some(Face::Front),
+            "Render pipeline mesh transparent – backfaces",
         );
 
         // We initialize instances, the instance buffer and mesh mappings in `setup_entities`.
@@ -241,6 +257,7 @@ impl GraphicsState {
             depth_stencil_gauss,
             // todo These two blend styles approaches produce noticibly different results. Experiment.
             Some(BlendState::ALPHA_BLENDING),
+            None,
             // Some(BlendState {
             //     color: BlendComponent {
             //         src_factor: BlendFactor::One,
@@ -282,13 +299,14 @@ impl GraphicsState {
             index_buf,
             instance_buf,
             instance_buf_transparent,
-            instance_gauss_buf,
+            instance_buf_gauss: instance_gauss_buf,
             bind_groups,
             camera_buf: cam_buf,
             cam_basis_buf,
             lighting_buf,
             pipeline_mesh,
             pipeline_mesh_transparent,
+            pipeline_mesh_transparent_back,
             pipeline_gauss,
             depth_texture,
             // staging_belt: wgpu::util::StagingBelt::new(0x100),
@@ -392,12 +410,13 @@ impl GraphicsState {
     /// meshes, lights, or the camera. The vertex and index buffers aren't changed; only the instances.
     pub(crate) fn setup_entities(&mut self, device: &Device) {
         let mut instances = Vec::new();
-        let mut instances_transparent = Vec::new();
+        let mut instances_transparent: Vec<Instance> = Vec::new();
 
         let mut mesh_mappings = Vec::new();
         let mut mesh_mappings_transparent = Vec::new();
 
         let mut vertex_start_this_mesh = 0;
+
         let mut instance_start_this_mesh = 0;
         let mut instance_start_this_mesh_transparent = 0;
 
@@ -406,49 +425,28 @@ impl GraphicsState {
             let mut instance_count_this_mesh_transparent = 0;
 
             for entity in self.scene.entities.iter().filter(|e| e.mesh == i) {
-                let scale = match entity.scale_partial {
-                    Some(s) => s,
-                    None => Vec3::new(entity.scale, entity.scale, entity.scale),
-                };
-
-                let instance = Instance {
-                    // todo: entity into method?
-                    position: entity.position,
-                    orientation: entity.orientation,
-                    scale,
-                    color: Vec3::new(entity.color.0, entity.color.1, entity.color.2),
-                    opacity: entity.opacity,
-                    shinyness: entity.shinyness,
-                };
+                let instance: Instance = entity.into();
 
                 if entity.opacity < 0.99 {
                     instances_transparent.push(instance);
-
-                    mesh_mappings_transparent.push((
-                        vertex_start_this_mesh,
-                        instance_start_this_mesh_transparent,
-                        instance_count_this_mesh_transparent,
-                    ));
-
                     instance_count_this_mesh_transparent += 1;
                 } else {
                     instances.push(instance);
-
-                    mesh_mappings.push((
-                        vertex_start_this_mesh,
-                        instance_start_this_mesh,
-                        instance_count_this_mesh,
-                    ));
-
                     instance_count_this_mesh += 1;
                 }
             }
 
-            // mesh_mappings.push((
-            //     vertex_start_this_mesh,
-            //     instance_start_this_mesh,
-            //     instance_count_this_mesh,
-            // ));
+            mesh_mappings.push((
+                vertex_start_this_mesh,
+                instance_start_this_mesh,
+                instance_count_this_mesh,
+            ));
+
+            mesh_mappings_transparent.push((
+                vertex_start_this_mesh,
+                instance_start_this_mesh_transparent,
+                instance_count_this_mesh_transparent,
+            ));
 
             vertex_start_this_mesh += mesh.vertices.len() as i32;
 
@@ -456,14 +454,15 @@ impl GraphicsState {
             instance_start_this_mesh_transparent += instance_count_this_mesh_transparent;
         }
 
-        let mut instance_data = Vec::new();
+        let mut instance_data = Vec::with_capacity(instances.len() * INSTANCE_SIZE);
         for instance in &instances {
             for byte in instance.to_bytes() {
                 instance_data.push(byte);
             }
         }
 
-        let mut instance_data_transparent = Vec::new();
+        let mut instance_data_transparent =
+            Vec::with_capacity(instances_transparent.len() * INSTANCE_SIZE);
         for instance in &instances_transparent {
             for byte in instance.to_bytes() {
                 instance_data_transparent.push(byte);
@@ -483,28 +482,27 @@ impl GraphicsState {
             usage: BufferUsages::VERTEX,
         });
 
-        self.instance_buf = instance_buf;
-        self.instance_buf_transparent = instance_buf_transparent;
-
         let mut instances_gauss = Vec::with_capacity(self.scene.gaussians.len());
         for gauss in &self.scene.gaussians {
             instances_gauss.push(gauss.to_instance());
         }
 
-        let mut instance_gauss_data = Vec::new();
+        let mut instance_gauss_data = Vec::with_capacity(instances_gauss.len() * INSTANCE_SIZE);
         for instance in &instances_gauss {
             for byte in instance.to_bytes() {
                 instance_gauss_data.push(byte);
             }
         }
 
-        let instance_gauss_buf = device.create_buffer_init(&BufferInitDescriptor {
+        let instance_buf_gauss = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Gaussian Instance buffer"),
             contents: &instance_gauss_data,
             usage: BufferUsages::VERTEX,
         });
 
-        self.instance_gauss_buf = instance_gauss_buf;
+        self.instance_buf = instance_buf;
+        self.instance_buf_transparent = instance_buf_transparent;
+        self.instance_buf_gauss = instance_buf_gauss;
 
         self.mesh_mappings = mesh_mappings;
         self.mesh_mappings_transparent = mesh_mappings_transparent;
@@ -602,13 +600,27 @@ impl GraphicsState {
 
         rpass.set_viewport(x, y, eff_width, eff_height, 0., 1.);
 
-        // Make a render pass for opaque meshes, and transparent ones. We separate them so as to only
+        // Make a render pass for opaque meshes, and transparent ones. We separate them to only
         // back-cull opaque ones.
-        for (inst_buf, pipeline, mappings) in [(&self.instance_buf, &self.pipeline_mesh, &self.mesh_mappings),
-            (&self.instance_buf_transparent, &self.pipeline_mesh_transparent, &self.mesh_mappings_transparent)]
-            .into_iter()
+        // We draw transparent meshes in two passes, for proper surface culling.
+        for (inst_buf, pipeline, mappings) in [
+            (&self.instance_buf, &self.pipeline_mesh, &self.mesh_mappings),
+            (
+                &self.instance_buf_transparent,
+                &self.pipeline_mesh_transparent,
+                &self.mesh_mappings_transparent,
+            ),
+            (
+                &self.instance_buf_transparent,
+                &self.pipeline_mesh_transparent_back,
+                &self.mesh_mappings_transparent,
+            ),
+        ]
+        .into_iter()
         {
-            if inst_buf.size() == 0 { continue; }
+            if inst_buf.size() == 0 {
+                continue;
+            }
 
             rpass.set_pipeline(pipeline);
             rpass.set_bind_group(0, &self.bind_groups.cam, &[]);
@@ -625,6 +637,7 @@ impl GraphicsState {
 
                 if instance_count_this_mesh == 0 {
                     start_ind += mesh.indices.len() as u32;
+                    continue;
                 }
 
                 rpass.draw_indexed(
@@ -638,13 +651,13 @@ impl GraphicsState {
         }
 
         // Draw gaussians.
-        if ! self .scene.gaussians.is_empty() {
-            rpass.set_pipeline( & self.pipeline_gauss);
+        if !self.scene.gaussians.is_empty() {
+            rpass.set_pipeline(&self.pipeline_gauss);
 
             rpass.set_bind_group(0, &self.bind_groups.cam_gauss, &[]);
 
             rpass.set_vertex_buffer(0, self.vertex_buf_quad.slice(..));
-            rpass.set_vertex_buffer(1, self.instance_gauss_buf.slice(..)); // stride = 32 B
+            rpass.set_vertex_buffer(1, self.instance_buf_gauss.slice(..)); // stride = 32 B
 
             rpass.draw(0..6, 0..self.scene.gaussians.len() as _); // 6 indices for the quad
         }
@@ -768,14 +781,9 @@ fn create_render_pipeline(
     vertex_buffers: &'static [VertexBufferLayout<'static>],
     depth_stencil: Option<DepthStencilState>,
     blend: Option<BlendState>,
+    cull_mode: Option<Face>,
     label: &str,
 ) -> RenderPipeline {
-    let cull_mode = if blend.is_some() {
-        None
-    } else {
-        Some(wgpu::Face::Back)
-    };
-
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
         layout: Some(layout),

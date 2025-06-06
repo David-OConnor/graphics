@@ -232,6 +232,24 @@ impl Instance {
     }
 }
 
+impl From<&Entity> for Instance {
+    fn from(entity: &Entity) -> Self {
+        let scale = match entity.scale_partial {
+            Some(s) => s,
+            None => Vec3::new(entity.scale, entity.scale, entity.scale),
+        };
+
+        Self {
+            position: entity.position,
+            orientation: entity.orientation,
+            scale,
+            color: Vec3::new(entity.color.0, entity.color.1, entity.color.2),
+            opacity: entity.opacity,
+            shinyness: entity.shinyness,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,

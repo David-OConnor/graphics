@@ -155,7 +155,18 @@ fn linear_to_srgb(color: vec3<f32>) -> vec3<f32> {
 
 /// Fragment shader, which is mostly lighting calculations.
 @fragment
-fn fs_main(vertex: VertexOut) -> @location(0) vec4<f32> {
+fn fs_main(
+    vertex: VertexOut,
+    @builtin(front_facing) front: bool,
+) -> @location(0) vec4<f32> {
+    // Always renormalise after interpolation
+    var normal = normalize(vertex.normal);
+
+    // If it’s a back face, flip the normal so it still points *out* of the surface
+    if (!front) {
+        normal = -normal;
+    }
+
     // Ambient lighting
     // todo: Don't multiply ambient for every fragment; do it on the CPU.
     var ambient = lighting.ambient_color * lighting.ambient_intensity;
@@ -198,7 +209,7 @@ fn fs_main(vertex: VertexOut) -> @location(0) vec4<f32> {
 
 
         // Diffuse lighting. This is essentially cosine los.
-        var diffuse_attenuation = max(dot(vertex.normal, -light_to_vert_dir), 0.);
+        var diffuse_attenuation = max(dot(normal, -light_to_vert_dir), 0.);
 
         // For directional lights, don't attenuate further if the vertex is inside the light's
         // FOV. If outside, gradually attentuate to 0.
@@ -221,25 +232,42 @@ fn fs_main(vertex: VertexOut) -> @location(0) vec4<f32> {
 //          // Blinn half vector
             var half_dir = normalize(view_dir + light_to_vert_dir);
             // Fresnel Effect: Adjust specular based on view angle
-            var fresnel = pow(1.0 - dot(view_dir, vertex.normal), 5.0);
-            var specular_coeff = pow(max(dot(vertex.normal, half_dir), 0.), vertex.shinyness);
+            var fresnel = pow(1.0 - dot(view_dir, normal), 5.0);
+            var specular_coeff = pow(max(dot(normal, half_dir), 0.), vertex.shinyness);
             specular += fresnel * light.specular_color * specular_coeff * light.specular_intensity * dist_attenuation;
 
 //            specular_this_light = light.specular_color * specular_coeff * light.specular_intensity * dist_attenuation;
-//            specular += specular_this_light * clamp(dot(vertex.normal, light_to_vert_dir), 0.0, 1.0);
+//            specular += specular_this_light * clamp(dot(N, light_to_vert_dir), 0.0, 1.0);
 
         }
     }
 
+
+    // -----  modulated combine  -----
+    let base   = vertex.color.rgb;       // albedo / base colour coming from the mesh
+    let litRGB = (ambient.rgb + diffuse.rgb) * base   // lambert terms tinted
+               + specular.rgb;                        // specular left un-tinted
+
+    var result = vec4<f32>(litRGB, vertex.color.a);   // keep original alpha
+
+    // optional: apply fog AFTER lighting so specular also gets fogged
+    // result.rgb = mix(result.rgb, fog_color, clamp(view_dist * fog_thickness, 0.0, 1.0));
+
+    // convert to sRGB for the framebuffer
+    let srgb = linear_to_srgb(result.rgb);
+    result   = vec4<f32>(srgb, result.a);
+
+    return result;
+
 //    var result = (ambient + diffuse + specular) * vertex.color + fog;
 //    var result = (ambient + diffuse + specular) * vertex.color;
 
-    // Process alpha separately.
-    var lightingColor = ambient.rgb + diffuse.rgb + specular.rgb;
-    var result = vec4<f32>(lightingColor * vertex.color.rgb, vertex.color.a);
-
-    let srgb_color = linear_to_srgb(result.rgb);
-    result = vec4<f32>(srgb_color, result.a);
-
-    return result;
+//    // Process alpha separately.
+//    var lightingColor = ambient.rgb + diffuse.rgb + specular.rgb;
+//    var result = vec4<f32>(lightingColor * vertex.color.rgb, vertex.color.a);
+//
+//    let srgb_color = linear_to_srgb(result.rgb);
+//    result = vec4<f32>(srgb_color, result.a);
+//
+//    return result;
 }
