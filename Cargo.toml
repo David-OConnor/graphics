@@ -1,6 +1,6 @@
 [package]
 name = "graphics"
-version = "0.3.13"
+version = "0.4.0"
 authors = ["David O'Connor <the_alchemist@fastmail.com>"]
 description = "A 3D rendering engine for rust programs, with GUI integration"
 edition = "2024"
