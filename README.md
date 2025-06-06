@@ -4,9 +4,14 @@ A 3D rendering engine for rust programs, with GUI integration
 [![Crate](https://img.shields.io/crates/v/graphics.svg)](https://crates.io/crates/graphics)
 [![Docs](https://docs.rs/graphics/badge.svg)](https://docs.rs/graphics)
 
-This library is a framework for building PC applications that have 3D graphics, and a GUI. It uses the [WGPU toolkit](https://wgpu.rs/) with Vulkan backend, and [EGUI](https://docs.rs/egui/latest/egui/). It works on Windows, Linux, and Mac.
+This library is a framework for building PC applications that have 3D graphics, and a GUI. It uses the [WGPU toolkit](https://wgpu.rs/) with Vulkan backend, and [EGUI](https://docs.rs/egui/latest/egui/). 
+It works on Windows, Linux, and Mac.
 
-This is intended as a general-purpose 3D visualization tool. Example use cases including wave-function analysis, n-body simulations, and protein structure viewing. It's also been used to visualize UAS attitude in preflight software. Its goals are to be intuitive and flexible.
+This is intended as a general-purpose 3D visualization tool. Example use cases including wave-function analysis, n-body simulations, 
+and protein structure viewing. It's also been used to visualize UAS attitude in preflight software. Its goals are to be intuitive and flexible.
+
+Supports transparent meshes, and gaussians. Includes built-in mesh primitives for spheres, cylinders, and rectangular prisms.
+Allows importing and creating arbitrary meshes.
 
 ![Mol viewer screenshot](screenshots/mol_viewer_2025.png)
 
@@ -20,7 +25,9 @@ You can enable the `app_utils` feature for utility functionality that is useful 
 
 ![WF lab screenshot](screenshots/psi_lab_2024.png)
 
-Example boilerplate below. Calling `render(state)` starts an event loop. The application can interact with the engine through the `_handler` callbacks; each frame, each hardware event, or through the GUI. Each of these return an `EngineUpdates` struct, which determines if entities, meshes, lighting, or the camera needs to be refreshed.
+Example boilerplate below. Calling `render(state)` starts an event loop. The application can interact with the engine 
+through the `_handler` callbacks; each frame, each hardware event, or through the GUI. Each of these return an 
+`EngineUpdates` struct, which determines if entities, meshes, lighting, or the camera needs to be refreshed.
 
 ```rust
 //! This module integrations this application with the graphics engine.
