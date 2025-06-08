@@ -13,11 +13,14 @@ and protein structure viewing. It's also been used to visualize UAS attitude in 
 Supports transparent meshes, and gaussians. Includes built-in mesh primitives for spheres, cylinders, and rectangular prisms.
 Allows importing and creating arbitrary meshes.
 
-![Mol viewer screenshot](screenshots/mol_viewer_2025.png)
+![Electron density demo](screenshots/daedalus_iso_a.png)
+
 
 It includes built in FPS-style (Amplified for 6 DOF) camera controls. (WSAD + Space for up, C for down, Q and E for roll.
 Mouse for pitch and yaw). This can be overridden by the application with arbitrary controls. (See the `event_handler` parameter to
 `graphics::run()`)
+
+![Mol viewer screenshot](screenshots/mol_viewer_2025.png)
 
 It uses the [lin_alg](https://docs.rs/lin_alg/latest/lin_alg/f32/index.html) library for vector, matrix, and quaternion operations.
 

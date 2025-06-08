@@ -1,4 +1,7 @@
-//! This module contains code specific to the WGPU library.
+//! This module contains the core part of interaction with the graphics API. It is tied closely
+//! to the WGPU library. We set up pipelines, populate vertex and index buffers, define shaders,
+//! and create render passes.
+//!
 //! See [Official WGPU examples](https://github.com/gfx-rs/wgpu/tree/master/wgpu/examples)
 //! See [Bevy Garphics](https://github.com/bevyengine/bevy/blob/main/crates/bevy_render) for
 //! a full graphics engine example that uses Wgpu.
@@ -70,6 +73,8 @@ pub(crate) struct GraphicsState {
     pub pipeline_mesh: RenderPipeline, // todo: Move to renderer.
     /// For transparent meshes: Disable back-culling.
     pub pipeline_mesh_transparent: RenderPipeline, // todo: Move to renderer.
+    /// We use this two-pipeline approach for transparent meshes for rendering ones that
+    /// are transparent, and double-sided.
     pub pipeline_mesh_transparent_back: RenderPipeline, // todo: Move to renderer.
     pub pipeline_gauss: RenderPipeline,                 // todo: Move to renderer.
     pub depth_texture: Texture,
