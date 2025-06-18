@@ -162,7 +162,7 @@ fn fs_main(
     // Always renormalise after interpolation
     var normal = normalize(vertex.normal);
 
-    // If it’s a back face, flip the normal so it still points *out* of the surface
+    // If it’s a transparent surface's back face, flip the normal so it still points *out* of the surface
     if (!front) {
         normal = -normal;
     }
@@ -230,7 +230,9 @@ fn fs_main(
 
         if (diffuse_attenuation > 0.0) {
 //          // Blinn half vector
-            var half_dir = normalize(view_dir + light_to_vert_dir);
+//            var half_dir = normalize(view_dir + light_to_vert_dir);
+            var half_dir = normalize(view_dir - light_to_vert_dir);
+
             // Fresnel Effect: Adjust specular based on view angle
             var fresnel = pow(1.0 - dot(view_dir, normal), 5.0);
             var specular_coeff = pow(max(dot(normal, half_dir), 0.), vertex.shinyness);
@@ -258,16 +260,4 @@ fn fs_main(
     result   = vec4<f32>(srgb, result.a);
 
     return result;
-
-//    var result = (ambient + diffuse + specular) * vertex.color + fog;
-//    var result = (ambient + diffuse + specular) * vertex.color;
-
-//    // Process alpha separately.
-//    var lightingColor = ambient.rgb + diffuse.rgb + specular.rgb;
-//    var result = vec4<f32>(lightingColor * vertex.color.rgb, vertex.color.a);
-//
-//    let srgb_color = linear_to_srgb(result.rgb);
-//    result = vec4<f32>(srgb_color, result.a);
-//
-//    return result;
 }

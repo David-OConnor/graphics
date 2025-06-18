@@ -250,7 +250,7 @@ impl From<&Entity> for Instance {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     /// These indices are relative to 0 for this mesh. When adding to a global index

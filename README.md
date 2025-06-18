@@ -20,7 +20,7 @@ It includes built in FPS-style (Amplified for 6 DOF) camera controls. (WSAD + Sp
 Mouse for pitch and yaw). This can be overridden by the application with arbitrary controls. (See the `event_handler` parameter to
 `graphics::run()`)
 
-![Mol viewer screenshot](screenshots/mol_viewer_2025.png)
+![Surface demo](screenshots/surface_mesh_transparent.png)
 
 It uses the [lin_alg](https://docs.rs/lin_alg/latest/lin_alg/f32/index.html) library for vector, matrix, and quaternion operations.
 
@@ -320,3 +320,5 @@ fn main() {
     render(State {});
 }
 ```
+
+![Mol viewer screenshot](screenshots/mol_viewer_2025.png)

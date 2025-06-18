@@ -76,7 +76,7 @@ pub(crate) struct GraphicsState {
     /// We use this two-pipeline approach for transparent meshes for rendering ones that
     /// are transparent, and double-sided.
     pub pipeline_mesh_transparent_back: RenderPipeline, // todo: Move to renderer.
-    pub pipeline_gauss: RenderPipeline,                 // todo: Move to renderer.
+    pub pipeline_gauss: RenderPipeline, // todo: Move to renderer.
     pub depth_texture: Texture,
     pub msaa_texture: Option<TextureView>, // MSAA Multisampled texture
     pub inputs_commanded: InputsCommanded,
