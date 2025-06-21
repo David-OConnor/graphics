@@ -167,11 +167,6 @@ impl GraphicsState {
             bias: wgpu::DepthBiasState::default(),
         };
 
-        let depth_stencil_mesh_transparent = DepthStencilState {
-            depth_write_enabled: false,
-            ..depth_stencil_mesh.clone()
-        };
-
         // todo: You should probably, eventually, make two passes for meshes. One for
         // opaque objects, with no blending (blend_state = None), then a second pass
         // for transparent objects. You would set depth to write only, for opaque objects,
@@ -184,7 +179,8 @@ impl GraphicsState {
             surface_cfg,
             msaa_samples,
             &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
-            Some(depth_stencil_mesh),
+            Some(depth_stencil_mesh.clone()),
+            // Some(depth_stencil_mesh),
             None,
             Some(Face::Back),
             "Render pipeline mesh opaque",
@@ -198,7 +194,8 @@ impl GraphicsState {
             surface_cfg,
             msaa_samples,
             &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
-            Some(depth_stencil_mesh_transparent.clone()),
+            // Some(depth_stencil_mesh_transparent.clone()),
+            Some(depth_stencil_mesh.clone()),
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Back),
             "Render pipeline mesh transparent",
@@ -211,8 +208,9 @@ impl GraphicsState {
             surface_cfg,
             msaa_samples,
             &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
-            Some(depth_stencil_mesh_transparent), // depth-write OFF
-            Some(BlendState::ALPHA_BLENDING),     // still alpha–blend
+            // Some(depth_stencil_mesh_transparent),
+            Some(depth_stencil_mesh.clone()),
+            Some(BlendState::ALPHA_BLENDING),
             Some(Face::Front),
             "Render pipeline mesh transparent – backfaces",
         );
@@ -610,14 +608,16 @@ impl GraphicsState {
         // We draw transparent meshes in two passes, for proper surface culling.
         for (inst_buf, pipeline, mappings) in [
             (&self.instance_buf, &self.pipeline_mesh, &self.mesh_mappings),
+            // The order might matter here, i.e. running the back transparent pipeline before
+            // the front transparent one.
             (
                 &self.instance_buf_transparent,
-                &self.pipeline_mesh_transparent,
+                &self.pipeline_mesh_transparent_back,
                 &self.mesh_mappings_transparent,
             ),
             (
                 &self.instance_buf_transparent,
-                &self.pipeline_mesh_transparent_back,
+                &self.pipeline_mesh_transparent,
                 &self.mesh_mappings_transparent,
             ),
         ]
