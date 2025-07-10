@@ -231,7 +231,7 @@ fn draw_entities(entities: &mut Vec<Entity>, snapshots: &[Snapshot]) {
         // manually set the `scale_partial` field with a `Vec3` if using non-uniform scaling. 
         Entity::new(
             MESH_BOND, // Index of the mesh.
-            vec3_to_f32(center) + offset_b,
+            center + offset_b,
             orientation, // A quaternion,
             1., // Scale
             BOND_COLOR,

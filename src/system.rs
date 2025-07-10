@@ -297,12 +297,12 @@ async fn setup_async(instance: &Instance, surface: &Surface<'static>) -> (Adapte
                 // https://docs.rs/wgpu/latest/wgpu/struct.Limits.html
                 required_limits: Default::default(),
                 memory_hints: Default::default(),
-                // trace: wgpu::Trace::Off,
+                trace: wgpu::Trace::Off,
             },
-            std::env::var("WGPU_TRACE")
-                .ok()
-                .as_ref()
-                .map(std::path::Path::new),
+            // std::env::var("WGPU_TRACE")
+            //     .ok()
+            //     .as_ref()
+            //     .map(std::path::Path::new),
         )
         .await
         .expect("Unable to find a suitable GPU adapter. :(");
