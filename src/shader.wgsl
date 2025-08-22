@@ -3,6 +3,10 @@
 struct Camera {
     proj_view: mat4x4<f32>,
     position: vec4<f32>,
+    fog_density: f32,
+    _pad1: vec3<f32>,
+    fog_color: vec3<f32>,
+    _pad2: f32,
 }
 
 struct PointLight {
@@ -12,6 +16,8 @@ struct PointLight {
     diffuse_intensity: f32,
     specular_intensity: f32,
     directional: u32, // Boolean
+    // todo: QC if you need this.
+     _padP: u32,      // keep 16B alignment
     direction: vec3<f32>,
     fov: f32,
 }
@@ -22,6 +28,8 @@ struct Lighting {
     ambient_intensity: f32,
     // We use this as a workaround for array len not working.
     lights_len: i32,
+    // todo: QC if you need this pad.
+//    _padL: vec2<f32>,   // align to 16 before array
     point_lights: array<PointLight>
 }
 
@@ -31,7 +39,7 @@ var<uniform> camera: Camera;
 @group(1) @binding(0)
 // We use a storage buffer, since our lighting size is unknown by the shader;
 // this is due to the dynamic-sized point light array.
-var<storage> lighting: Lighting;
+var<storage, read> lighting: Lighting;
 
 
 struct VertexIn {
@@ -65,6 +73,11 @@ struct VertexOut {
 //        @location(1) tangent_position: vec3<f32>,
 //        @location(2) tangent_light_position: vec3<f32>,
 //        @location(3) tangent_view_position: vec3<f32>,
+}
+
+fn fog_weight(distance_to_cam: f32, density: f32) -> f32 {
+  // T = exp(-density * d); weight = 1 - T
+  return 1.0 - exp(-density * distance_to_cam);
 }
 
 @vertex
@@ -136,14 +149,14 @@ fn vs_main(
     return result;
 }
 
-// Linear-to-sRGB Conversion
-fn linear_to_srgb(color: vec3<f32>) -> vec3<f32> {
-    return mix(
-        color * 12.92,
-        pow(color, vec3<f32>(1.0 / 2.2)) * 1.055 - vec3<f32>(0.055),
-        step(vec3<f32>(0.0031308), color)
-    );
-}
+//// Linear-to-sRGB Conversion
+//fn linear_to_srgb(color: vec3<f32>) -> vec3<f32> {
+//    return mix(
+//        color * 12.92,
+//        pow(color, vec3<f32>(1.0 / 2.2)) * 1.055 - vec3<f32>(0.055),
+//        step(vec3<f32>(0.0031308), color)
+//    );
+//}
 
 // Unused
 //fn fxaa(uv: vec2<f32>) -> vec3<f32> {
@@ -171,18 +184,8 @@ fn fs_main(
     // todo: Don't multiply ambient for every fragment; do it on the CPU.
     var ambient = lighting.ambient_color * lighting.ambient_intensity;
 
-    // todo: Pass from CPU
-    var fog_color = vec3<f32>(1., 1., 1.);
-    // todo: Pass from CPU
-    var fog_thickness = 0.001;
-
     var view_diff = camera.position.xyz - vertex.world_posit.xyz;
     var view_dir = normalize(view_diff);
-
-    // todo: Color the fog.
-    // Apply fog proportional to the distance between the camera and fragment.
-    var view_dist = length(view_diff);
-    var fog = view_dist * fog_thickness;
 
     // todo: Emmissive term?
 
@@ -237,27 +240,28 @@ fn fs_main(
             var fresnel = pow(1.0 - dot(view_dir, normal), 5.0);
             var specular_coeff = pow(max(dot(normal, half_dir), 0.), vertex.shinyness);
             specular += fresnel * light.specular_color * specular_coeff * light.specular_intensity * dist_attenuation;
-
-//            specular_this_light = light.specular_color * specular_coeff * light.specular_intensity * dist_attenuation;
-//            specular += specular_this_light * clamp(dot(N, light_to_vert_dir), 0.0, 1.0);
-
         }
     }
 
-
-    // -----  modulated combine  -----
+    // Modulated combine
     let base   = vertex.color.rgb;       // albedo / base colour coming from the mesh
     let litRGB = (ambient.rgb + diffuse.rgb) * base   // lambert terms tinted
                + specular.rgb;                        // specular left un-tinted
 
     var result = vec4<f32>(litRGB, vertex.color.a);   // keep original alpha
 
-    // optional: apply fog AFTER lighting so specular also gets fogged
-    // result.rgb = mix(result.rgb, fog_color, clamp(view_dist * fog_thickness, 0.0, 1.0));
+    // Exponential fog in linear space
+    if (camera.fog_density > 0.0) {
+        // Apply fog proportional to the distance between the camera and fragment.
+        let view_dist = length(view_diff);
+        let w = clamp(fog_weight(view_dist, camera.fog_density), 0.0, 1.0);
+        let fogged = mix(result.rgb, camera.fog_color, w);
+        result = vec4<f32>(fogged, result.a);
+    }
 
     // convert to sRGB for the framebuffer
-    let srgb = linear_to_srgb(result.rgb);
-    result   = vec4<f32>(srgb, result.a);
+//    let srgb = linear_to_srgb(result.rgb);
+    result   = vec4<f32>(result.rgb, result.a);
 
     return result;
 }

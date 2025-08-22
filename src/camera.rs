@@ -1,14 +1,14 @@
 //! Code to manage the camera.
 
 use core::f32::consts::TAU;
-
+use std::f32::consts::LN_2;
 use lin_alg::f32::{Mat4, Quaternion, Vec3};
 
-use crate::types::{MAT4_SIZE, VEC3_UNIFORM_SIZE};
+use crate::types::{F32_SIZE, MAT4_SIZE, VEC3_UNIFORM_SIZE};
 
 // cam size is only the parts we pass to the shader.
 // For each of the 4 matrices in the camera, plus a padded vec3 for position.
-pub const CAMERA_SIZE: usize = MAT4_SIZE + VEC3_UNIFORM_SIZE;
+pub const CAMERA_SIZE: usize = MAT4_SIZE + 3 * VEC3_UNIFORM_SIZE + 16; // Final 16 is an alignment pad.
 
 #[derive(Clone, Debug)]
 pub struct Camera {
@@ -22,6 +22,10 @@ pub struct Camera {
     pub orientation: Quaternion,
     /// We store the projection matrix here since it only changes when we change the camera cfg.
     pub proj_mat: Mat4, // todo: Make provide, and provide a constructor?
+    /// ln(2) / half_distance.   0. = disabled
+    pub fog_density: f32,
+    // todo: Fog color is inoperative at this time.
+    pub fog_color: [f32; 3],
 }
 
 impl Camera {
@@ -30,8 +34,23 @@ impl Camera {
 
         let proj_view = self.proj_mat.clone() * self.view_mat();
 
-        result[0..MAT4_SIZE].clone_from_slice(&proj_view.to_bytes());
-        result[MAT4_SIZE..CAMERA_SIZE].clone_from_slice(&self.position.to_bytes_uniform());
+        let mut i = 0;
+
+        result[i..i + MAT4_SIZE].clone_from_slice(&proj_view.to_bytes());
+        i += MAT4_SIZE;
+
+        result[i..i + VEC3_UNIFORM_SIZE].clone_from_slice(&self.position.to_bytes_uniform());
+        i += VEC3_UNIFORM_SIZE;
+
+        result[i..i + F32_SIZE].clone_from_slice(&self.fog_density.to_ne_bytes());
+        i += VEC3_UNIFORM_SIZE; // for 16-byte alignment.
+
+        result[i..i + F32_SIZE].clone_from_slice(&self.fog_color[0].to_ne_bytes());
+        i += F32_SIZE;
+        result[i..i + F32_SIZE].clone_from_slice(&self.fog_color[1].to_ne_bytes());
+        i += F32_SIZE;
+        result[i..i + F32_SIZE].clone_from_slice(&self.fog_color[2].to_ne_bytes());
+        // Pad if we add more fields for 16-byte alignment.
 
         result
     }
@@ -56,6 +75,12 @@ impl Camera {
         let height = 2. * dist * (self.fov_y / 2.).tan();
         (width, height)
     }
+
+    /// Set fog density so that objects at the specified distance are attenuated to 50% of their
+    /// original visibility.
+    pub fn set_fog_half_distance(&mut self, half_distance: Option<f32>) {
+        self.fog_density = half_distance.map_or(0.0, |d| LN_2 / d.max(1e-6));
+    }
 }
 
 impl Default for Camera {
@@ -68,6 +93,8 @@ impl Default for Camera {
             near: 0.5,
             far: 60.,
             proj_mat: Mat4::new_identity(),
+            fog_density: 0.,
+            fog_color: [0., 0., 0.],
         };
 
         result.update_proj_mat();

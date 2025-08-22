@@ -279,7 +279,7 @@ impl Mesh {
         }
     }
 
-    /// Create a UV sphere mesh. A higher number of latitudes and longitudes results in a
+    /// Create a UV sphere mesh. A higher number of latitudes and longitudes results in
     /// a smoother sphere.
     pub fn new_sphere_uv(radius: f32, num_lats: usize, num_lons: usize) -> Self {
         let mut vertices = Vec::new();
