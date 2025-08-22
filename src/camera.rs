@@ -22,9 +22,15 @@ pub struct Camera {
     pub orientation: Quaternion,
     /// We store the projection matrix here since it only changes when we change the camera cfg.
     pub proj_mat: Mat4, // todo: Make provide, and provide a constructor?
-    /// ln(2) / half_distance.   0. = disabled
+    /// These are in distances from the camera.
+    /// E scale within band. 1.0 is a good baseline.
     pub fog_density: f32,
-    // todo: Fog color is inoperative at this time.
+    /// Curve steepness, e.g. 4–8. Higher means more of a near "wall" with heavy far fade.
+    pub fog_power:  f32,
+    /// distance where fog begins
+    pub fog_start: f32,
+    /// Distance where fog reaches full strength
+    pub fog_end: f32,
     pub fog_color: [f32; 3],
 }
 
@@ -43,10 +49,17 @@ impl Camera {
         i += VEC3_UNIFORM_SIZE;
 
         result[i..i + F32_SIZE].clone_from_slice(&self.fog_density.to_ne_bytes());
-        i += VEC3_UNIFORM_SIZE; // for 16-byte alignment.
+        i += F32_SIZE;
+        result[i..i + F32_SIZE].clone_from_slice(&self.fog_power.to_ne_bytes());
+        i += F32_SIZE;
+        result[i..i + F32_SIZE].clone_from_slice(&self.fog_start.to_ne_bytes());
+        i += F32_SIZE;
+        result[i..i + F32_SIZE].clone_from_slice(&self.fog_end.to_ne_bytes());
+        i += F32_SIZE;
 
         result[i..i + F32_SIZE].clone_from_slice(&self.fog_color[0].to_ne_bytes());
         i += F32_SIZE;
+
         result[i..i + F32_SIZE].clone_from_slice(&self.fog_color[1].to_ne_bytes());
         i += F32_SIZE;
         result[i..i + F32_SIZE].clone_from_slice(&self.fog_color[2].to_ne_bytes());
@@ -76,11 +89,11 @@ impl Camera {
         (width, height)
     }
 
-    /// Set fog density so that objects at the specified distance are attenuated to 50% of their
-    /// original visibility.
-    pub fn set_fog_half_distance(&mut self, half_distance: Option<f32>) {
-        self.fog_density = half_distance.map_or(0.0, |d| LN_2 / d.max(1e-6));
-    }
+    // /// Set fog density so that objects at the specified distance are attenuated to 50% of their
+    // /// original visibility.
+    // pub fn set_fog_half_distance(&mut self, half_distance: Option<f32>) {
+    //     self.fog_density = half_distance.map_or(0.0, |d| LN_2 / d.max(1e-6));
+    // }
 }
 
 impl Default for Camera {
@@ -93,7 +106,10 @@ impl Default for Camera {
             near: 0.5,
             far: 60.,
             proj_mat: Mat4::new_identity(),
-            fog_density: 0.,
+            fog_density: 1.,
+            fog_power: 6.,
+            fog_start: 0.,
+            fog_end: 0.,
             fog_color: [0., 0., 0.],
         };
 
