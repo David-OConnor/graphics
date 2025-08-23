@@ -8,7 +8,6 @@ struct Camera {
     fog_start: f32,
     fog_end: f32,
     fog_color: vec3<f32>,
-    _pad1: f32,
 }
 
 struct PointLight {
@@ -18,8 +17,6 @@ struct PointLight {
     diffuse_intensity: f32,
     specular_intensity: f32,
     directional: u32, // Boolean
-    // todo: QC if you need this.
-     _padP: u32,      // keep 16B alignment
     direction: vec3<f32>,
     fov: f32,
 }
@@ -28,10 +25,7 @@ struct PointLight {
 struct Lighting {
     ambient_color: vec4<f32>,
     ambient_intensity: f32,
-    // We use this as a workaround for array len not working.
     lights_len: i32,
-    // todo: QC if you need this pad.
-//    _padL: vec2<f32>,   // align to 16 before array
     point_lights: array<PointLight>
 }
 
@@ -77,19 +71,6 @@ struct VertexOut {
 //        @location(3) tangent_view_position: vec3<f32>,
 }
 
-//// A linear, Beer-Lambert fog
-//fn fog_weight_linear(distance_to_cam: f32, density: f32) -> f32 {
-//  // T = exp(-density * d); weight = 1 - T
-//  return 1.0 - exp(-density * distance_to_cam);
-//}
-//
-//// A more aggressive fog, to hide things far from the camera.
-//fn fog_weight(distance_to_cam: f32, density: f32) -> f32 {
-//    // Exponential-squared: T = exp(-(k*d)^2), w = 1 - T
-//    let m = density * distance_to_cam;
-//    return 1.0 - exp(-m * m);
-//}
-
 fn saturate(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
 
 fn fog_weight_band(distance_to_cam: f32) -> f32 {
@@ -99,9 +80,6 @@ fn fog_weight_band(distance_to_cam: f32) -> f32 {
 
     // Make far fade much harsher with a power curve
     let shaped = pow(t, camera.fog_power);
-
-    // Optional Beer–Lambert on top for “denser” feel inside the band:
-    // Comment this line and just `return shaped;` if you want purely artistic fog.
     return 1.0 - exp(-camera.fog_density * shaped);
 }
 
@@ -125,23 +103,6 @@ fn vs_main(
         instance.normal_matrix_2,
     );
 
-    // "the transpose of the inverse of the upper-left 3x3 part of the model matrix"
-//    var model_mat_3 = mat3x3<f32>(
-//        instance.model_matrix_0.xyz,
-//        instance.model_matrix_1.xyz,
-//        instance.model_matrix_2.xyz,
-//    );
-
-    // todo: Constructing normal mat here to troubleshoot
-//    var normal_mat = model_mat_3;
-
-    // Note that the normal matrix is just the 3x3 rotation matrix, unless
-    // non-uniform scaling is used; that's when we need the inverse transpose.
-    // In either case, you should probably do that on the CPU.
-//    var normal_mat = inverse(transpose(model_mat_3));
-
-
-    // todo: Is this right?
     // We use the tangent matrix, and tangent out values for normal mapping.
     // This is currently unimplemented.
     var world_normal = normalize(normal_mat * vertex_in.normal);
@@ -173,15 +134,6 @@ fn vs_main(
 
     return result;
 }
-
-//// Linear-to-sRGB Conversion
-//fn linear_to_srgb(color: vec3<f32>) -> vec3<f32> {
-//    return mix(
-//        color * 12.92,
-//        pow(color, vec3<f32>(1.0 / 2.2)) * 1.055 - vec3<f32>(0.055),
-//        step(vec3<f32>(0.0031308), color)
-//    );
-//}
 
 // Unused
 //fn fxaa(uv: vec2<f32>) -> vec3<f32> {
@@ -257,8 +209,6 @@ fn fs_main(
         var specular_this_light = vec4<f32>(0., 0., 0., 0.);
 
         if (diffuse_attenuation > 0.0) {
-//          // Blinn half vector
-//            var half_dir = normalize(view_dir + light_to_vert_dir);
             var half_dir = normalize(view_dir - light_to_vert_dir);
 
             // Fresnel Effect: Adjust specular based on view angle
@@ -269,21 +219,13 @@ fn fs_main(
     }
 
     // Modulated combine
-    let base   = vertex.color.rgb;       // albedo / base colour coming from the mesh
-    let litRGB = (ambient.rgb + diffuse.rgb) * base   // lambert terms tinted
-               + specular.rgb;                        // specular left un-tinted
+    let base   = vertex.color.rgb;       // Albedo / base colour coming from the mesh
+    let litRGB = (ambient.rgb + diffuse.rgb) * base   // Lambert terms tinted
+               + specular.rgb;                        // Specular left un-tinted
 
-    var result = vec4<f32>(litRGB, vertex.color.a);   // keep original alpha
+    var result = vec4<f32>(litRGB, vertex.color.a);
 
-    // Exponential fog in linear space
-//    if (camera.fog_density > 0.0) {
-//        // Apply fog proportional to the distance between the camera and fragment.
-//        let view_dist = length(view_diff);
-//        let w = clamp(fog_weight(view_dist, camera.fog_density), 0.0, 1.0);
-//        let fogged = mix(result.rgb, camera.fog_color, w);
-//        result = vec4<f32>(fogged, result.a);
-//    }
-
+    // Apply the fog; attentuate pixels that meet the fog criteria.
     if (camera.fog_end > camera.fog_start) {
         let view_dist = length(view_diff);
         let w = clamp(fog_weight_band(view_dist), 0.0, 1.0);

@@ -1,25 +1,31 @@
 use lin_alg::f32::Vec3;
 
-use crate::types::{F32_SIZE, VEC3_SIZE, VEC3_UNIFORM_SIZE};
+use crate::{
+    copy_ne,
+    types::{F32_SIZE, VEC3_SIZE, VEC3_UNIFORM_SIZE},
+};
 
 // The extra 4 is due to uniform (and storage) buffers needing ton be a multiple of 16 in size.
 // This is for the non-array portion of the lighting uniform.
 // The extra 12 is for padding.
 pub const LIGHTING_SIZE_FIXED: usize = VEC3_UNIFORM_SIZE + F32_SIZE + 4 + 8;
 
-// The extra 4 pad here for the same reason.
-// pub const POINT_LIGHT_SIZE: usize = 3 * VEC3_UNIFORM_SIZE + 2 * F32_SIZE + 8;
+// Pad by 4 bytes to align to 16 bytes.
 pub const POINT_LIGHT_SIZE: usize = 3 * VEC3_UNIFORM_SIZE + 4 * F32_SIZE + VEC3_SIZE + 4;
 
 // Note: These array-to-bytes functions may have broader use than in this lighting module.
 
 fn array4_to_bytes(a: [f32; 4]) -> [u8; VEC3_UNIFORM_SIZE] {
     let mut result = [0; VEC3_UNIFORM_SIZE];
+    let mut i = 0;
 
-    result[0..F32_SIZE].clone_from_slice(&a[0].to_ne_bytes());
-    result[F32_SIZE..2 * F32_SIZE].clone_from_slice(&a[1].to_ne_bytes());
-    result[2 * F32_SIZE..3 * F32_SIZE].clone_from_slice(&a[2].to_ne_bytes());
-    result[3 * F32_SIZE..VEC3_UNIFORM_SIZE].clone_from_slice(&a[3].to_ne_bytes());
+    copy_ne!(result, a[0], i..i + F32_SIZE);
+    i += F32_SIZE;
+    copy_ne!(result, a[1], i..i + F32_SIZE);
+    i += F32_SIZE;
+    copy_ne!(result, a[2], i..i + F32_SIZE);
+    i += F32_SIZE;
+    copy_ne!(result, a[3], i..i + F32_SIZE);
 
     result
 }
@@ -58,15 +64,17 @@ impl Lighting {
         let mut result = Vec::new();
 
         let mut buf_fixed_size = [0; LIGHTING_SIZE_FIXED];
+        let mut i = 0;
 
-        buf_fixed_size[0..VEC3_UNIFORM_SIZE].clone_from_slice(&array4_to_bytes(self.ambient_color));
+        buf_fixed_size[i..i + VEC3_UNIFORM_SIZE]
+            .clone_from_slice(&array4_to_bytes(self.ambient_color));
+        i += VEC3_UNIFORM_SIZE;
 
-        buf_fixed_size[VEC3_UNIFORM_SIZE..VEC3_UNIFORM_SIZE + F32_SIZE]
-            .clone_from_slice(&self.ambient_intensity.to_ne_bytes());
+        copy_ne!(buf_fixed_size, self.ambient_intensity, i..i + F32_SIZE);
+        i += F32_SIZE;
 
-        // We pass size manually, due to trouble getting the array len in the shader.
-        buf_fixed_size[VEC3_UNIFORM_SIZE + F32_SIZE..VEC3_UNIFORM_SIZE + F32_SIZE + 4]
-            .clone_from_slice(&(self.point_lights.len() as i32).to_le_bytes());
+        copy_ne!(buf_fixed_size, self.point_lights.len() as i32, i..i + 4);
+        i += F32_SIZE; // i32
 
         for byte in buf_fixed_size.into_iter() {
             result.push(byte);
@@ -130,20 +138,21 @@ impl PointLight {
         result[i..i + VEC3_UNIFORM_SIZE].clone_from_slice(&array4_to_bytes(self.specular_color));
         i += VEC3_UNIFORM_SIZE;
 
-        result[i..i + F32_SIZE].clone_from_slice(&self.diffuse_intensity.to_ne_bytes());
+        copy_ne!(result, self.diffuse_intensity, i..i + F32_SIZE);
         i += F32_SIZE;
 
-        result[i..i + F32_SIZE].clone_from_slice(&self.specular_intensity.to_ne_bytes());
+        copy_ne!(result, self.specular_intensity, i..i + F32_SIZE);
         i += F32_SIZE;
 
+        // If not directional, the directional flag, direction, and FOV are all 0.
         if let LightType::Directional { direction, fov } = &self.type_ {
             result[i] = 1;
-            i += F32_SIZE; // u32
+            i += F32_SIZE; // u32 size for boolean type.
 
             result[i..i + VEC3_SIZE].clone_from_slice(&direction.to_bytes());
             i += VEC3_SIZE;
 
-            result[i..i + F32_SIZE].clone_from_slice(&fov.to_ne_bytes());
+            copy_ne!(result, fov, i..i + F32_SIZE);
             i += F32_SIZE;
         }
 

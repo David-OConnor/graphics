@@ -2,9 +2,13 @@
 
 use core::f32::consts::TAU;
 use std::f32::consts::LN_2;
+
 use lin_alg::f32::{Mat4, Quaternion, Vec3};
 
-use crate::types::{F32_SIZE, MAT4_SIZE, VEC3_UNIFORM_SIZE};
+use crate::{
+    copy_ne,
+    types::{F32_SIZE, MAT4_SIZE, VEC3_UNIFORM_SIZE},
+};
 
 // cam size is only the parts we pass to the shader.
 // For each of the 4 matrices in the camera, plus a padded vec3 for position.
@@ -26,7 +30,7 @@ pub struct Camera {
     /// E scale within band. 1.0 is a good baseline.
     pub fog_density: f32,
     /// Curve steepness, e.g. 4–8. Higher means more of a near "wall" with heavy far fade.
-    pub fog_power:  f32,
+    pub fog_power: f32,
     /// distance where fog begins
     pub fog_start: f32,
     /// Distance where fog reaches full strength
@@ -37,10 +41,9 @@ pub struct Camera {
 impl Camera {
     pub fn to_bytes(&self) -> [u8; CAMERA_SIZE] {
         let mut result = [0; CAMERA_SIZE];
+        let mut i = 0;
 
         let proj_view = self.proj_mat.clone() * self.view_mat();
-
-        let mut i = 0;
 
         result[i..i + MAT4_SIZE].clone_from_slice(&proj_view.to_bytes());
         i += MAT4_SIZE;
@@ -48,22 +51,20 @@ impl Camera {
         result[i..i + VEC3_UNIFORM_SIZE].clone_from_slice(&self.position.to_bytes_uniform());
         i += VEC3_UNIFORM_SIZE;
 
-        result[i..i + F32_SIZE].clone_from_slice(&self.fog_density.to_ne_bytes());
+        copy_ne!(result, self.fog_density, i..i + F32_SIZE);
         i += F32_SIZE;
-        result[i..i + F32_SIZE].clone_from_slice(&self.fog_power.to_ne_bytes());
+        copy_ne!(result, self.fog_power, i..i + F32_SIZE);
         i += F32_SIZE;
-        result[i..i + F32_SIZE].clone_from_slice(&self.fog_start.to_ne_bytes());
+        copy_ne!(result, self.fog_start, i..i + F32_SIZE);
         i += F32_SIZE;
-        result[i..i + F32_SIZE].clone_from_slice(&self.fog_end.to_ne_bytes());
-        i += F32_SIZE;
-
-        result[i..i + F32_SIZE].clone_from_slice(&self.fog_color[0].to_ne_bytes());
+        copy_ne!(result, self.fog_end, i..i + F32_SIZE);
         i += F32_SIZE;
 
-        result[i..i + F32_SIZE].clone_from_slice(&self.fog_color[1].to_ne_bytes());
+        copy_ne!(result, self.fog_color[0], i..i + F32_SIZE);
         i += F32_SIZE;
-        result[i..i + F32_SIZE].clone_from_slice(&self.fog_color[2].to_ne_bytes());
-        // Pad if we add more fields for 16-byte alignment.
+        copy_ne!(result, self.fog_color[1], i..i + F32_SIZE);
+        i += F32_SIZE;
+        copy_ne!(result, self.fog_color[1], i..i + F32_SIZE);
 
         result
     }

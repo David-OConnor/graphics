@@ -41,3 +41,9 @@ pub use winit::{
     self,
     event::{self, DeviceEvent, ElementState, WindowEvent},
 };
+
+// A helper macro. Not intended for use outside of this crate.
+#[macro_export]
+macro_rules! copy_ne {
+    ($dest:expr, $src:expr, $range:expr) => {{ $dest[$range].copy_from_slice(&$src.to_ne_bytes()) }};
+}
