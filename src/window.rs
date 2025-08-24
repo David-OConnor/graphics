@@ -228,6 +228,12 @@ where
                 // When the cursor moves out of the window, stop mouse-looking.
                 graphics.inputs_commanded.free_look = false;
             }
+            // This is required to prevent the application from freezing after dropping a file.
+            WindowEvent::HoveredFile(_)
+            | WindowEvent::HoveredFileCancelled
+            | WindowEvent::DroppedFile(_) => {
+                self.graphics.as_ref().unwrap().window.request_redraw();
+            }
             _ => {}
         }
     }
