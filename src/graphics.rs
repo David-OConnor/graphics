@@ -707,7 +707,8 @@ impl GraphicsState {
                     center,
                     dt_secs,
                 ),
-                _ => unimplemented!(),
+                ControlScheme::None => false,
+                ControlScheme::Fps => unimplemented!(),
             };
 
             if cam_changed {
