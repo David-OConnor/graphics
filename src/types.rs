@@ -5,7 +5,7 @@ use bincode::{Decode, Encode};
 use lin_alg::f32::{Mat4, Quaternion, Vec3, Vec4};
 use wgpu::{VertexAttribute, VertexBufferLayout, VertexFormat};
 
-use crate::{camera::Camera, gauss::Gaussian, lighting::Lighting};
+use crate::{EntityUpdate, camera::Camera, gauss::Gaussian, lighting::Lighting};
 
 // These sizes are in bytes. We do this, since that's the data format expected by the shader.
 pub const F32_SIZE: usize = 4;
@@ -279,6 +279,13 @@ pub struct Entity {
     pub color: (f32, f32, f32),
     pub opacity: f32,
     pub shinyness: f32, // 0 to 1.
+    // todo: Experimenting. Public so we can override defaults in applications,
+    // todo, but should not be set by the user.
+    /// Used for replacing entities without rebuilding the buffer.
+    pub buf_i: Option<usize>,
+    /// Used for replacing entities without rebuilding the buffer.
+    /// Which buffer this slot is in.
+    pub buf_is_transparent: bool,
 }
 
 impl Default for Entity {
@@ -294,6 +301,8 @@ impl Default for Entity {
             color: (1., 1., 1.),
             opacity: 1.,
             shinyness: 0.,
+            buf_i: None,
+            buf_is_transparent: false,
         }
     }
 }
@@ -318,6 +327,8 @@ impl Entity {
             color,
             opacity: 1.,
             shinyness,
+            buf_i: None,
+            buf_is_transparent: false,
         }
     }
 }
@@ -492,7 +503,8 @@ impl Default for UiSettings {
 #[derive(Default)]
 pub struct EngineUpdates {
     pub meshes: bool,
-    pub entities: bool,
+    // pub entities: bool,
+    pub entities: EntityUpdate,
     pub camera: bool,
     pub lighting: bool,
 }

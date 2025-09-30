@@ -12,7 +12,7 @@
 //!
 //! 2022-08-21: https://github.com/gfx-rs/wgpu/blob/master/wgpu/examples/cube/main.rs
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use egui::Context;
 use lin_alg::f32::Vec3;
@@ -27,8 +27,12 @@ use wgpu::{
 use winit::{event::DeviceEvent, window::Window};
 
 use crate::{
+    Entity, Gaussian,
     camera::CAMERA_SIZE,
-    gauss::{CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT, QUAD_VERTICES},
+    gauss::{
+        CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, GaussianInstance, QUAD_VERTEX_LAYOUT,
+        QUAD_VERTICES,
+    },
     gui::GuiState,
     input::{self, InputsCommanded},
     system::{DEPTH_FORMAT, process_engine_updates},
@@ -54,6 +58,48 @@ pub const FWD_VEC: Vec3 = Vec3 {
     y: 0.,
     z: 1.,
 };
+
+/// We use this to define the extent of entity updates, and its effect on the instance buffer.
+/// For example, rebuild all entities, or update specific ones in-place.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub enum EntityUpdate {
+    #[default]
+    None,
+    /// Performs a complete rebuild of the instance buffer. This is a safe default
+    /// whenever entities changes, but updating specific IDs or classes can be more
+    /// efficient.
+    All,
+    /// Update specific classes in place, without changing the instance buffer size.
+    Classes(Vec<u32>),
+    /// Update specific IDs in place, without changing the instance buffer size.
+    Ids(Vec<u32>),
+    /// A range of start and end indexes.
+    Indexes((usize, usize)),
+}
+
+impl EntityUpdate {
+    pub fn push_class(&mut self, class: u32) {
+        match self {
+            EntityUpdate::None => *self = EntityUpdate::Classes(vec![class]),
+            EntityUpdate::All => (),
+            // todo: Support for updating both classes and IDs at once.
+            EntityUpdate::Classes(v) => v.push(class),
+            EntityUpdate::Ids(_) => *self = EntityUpdate::Classes(vec![class]),
+            EntityUpdate::Indexes(_) => *self = EntityUpdate::Classes(vec![class]),
+        }
+    }
+
+    pub fn push_id(&mut self, id: u32) {
+        match self {
+            EntityUpdate::None => *self = EntityUpdate::Ids(vec![id]),
+            EntityUpdate::All => (),
+            // todo: Support for updating both classes and IDs at once.
+            EntityUpdate::Classes(_) => *self = EntityUpdate::Ids(vec![id]),
+            EntityUpdate::Ids(v) => v.push(id),
+            EntityUpdate::Indexes(_) => *self = EntityUpdate::Ids(vec![id]),
+        }
+    }
+}
 
 /// Code related to our specific engine. Buffers, texture data etc.
 pub(crate) struct GraphicsState {
@@ -409,11 +455,78 @@ impl GraphicsState {
         self.index_buf = index_buf;
     }
 
-    /// Sets up entities (And the associated instance buf), but doesn't change
+    /// Replace instance buffer entries directly for specific entities. This is cheaper than
+    /// rebuilding the instance buffers whenever an entitity changes. This only supports in-place
+    /// changes; no adding or removing instances.
+    pub(crate) fn replace_instance_entries(
+        &mut self,
+        queue: &Queue,
+        device: &Device,
+        update_type: &EntityUpdate,
+    ) {
+        let classes_or_ids: HashSet<_> = match update_type {
+            EntityUpdate::Classes(v) | EntityUpdate::Ids(v) => v.iter().copied().collect(),
+            _ => HashSet::new(), // Unused
+        };
+
+        let mut needs_full_rebuild = false;
+
+        let ents_to_update = match update_type {
+            EntityUpdate::Indexes((start, end)) => &self.scene.entities[*start..*end],
+            _ => &self.scene.entities,
+        };
+
+        for ent in ents_to_update {
+            match update_type {
+                EntityUpdate::Classes(_) => {
+                    if !classes_or_ids.contains(&ent.class) {
+                        continue;
+                    }
+                }
+                EntityUpdate::Ids(_) => {
+                    if !classes_or_ids.contains(&ent.id) {
+                        continue;
+                    }
+                }
+                _ => (),
+            };
+
+            let Some(slot) = ent.buf_i else {
+                needs_full_rebuild = true;
+                break;
+            };
+
+            // If opacity bucket changed since last rebuild, our slot is invalid → full rebuild.
+            let now_is_transparent = ent.opacity < 0.99;
+            if now_is_transparent != ent.buf_is_transparent {
+                needs_full_rebuild = true;
+                break;
+            }
+
+            let instance: Instance = ent.into();
+            let bytes = instance.to_bytes();
+            let byte_offset = (slot * INSTANCE_SIZE) as u64;
+
+            if ent.buf_is_transparent {
+                queue.write_buffer(&self.instance_buf_transparent, byte_offset, &bytes);
+            } else {
+                queue.write_buffer(&self.instance_buf, byte_offset, &bytes);
+            }
+        }
+
+        if needs_full_rebuild {
+            println!("Performing a full entity rebuild; unable to update in-place");
+            self.setup_entities(device);
+        }
+    }
+
+    /// Sets up entities (And the associated instance buffer), but doesn't change
     /// meshes, lights, or the camera. The vertex and index buffers aren't changed; only the instances.
+    /// This rebuilds the instance buffers from scratch from entities.
     pub(crate) fn setup_entities(&mut self, device: &Device) {
         let mut instances = Vec::new();
         let mut instances_transparent: Vec<Instance> = Vec::new();
+        let mut instances_gauss = Vec::with_capacity(self.scene.gaussians.len());
 
         let mut mesh_mappings = Vec::new();
         let mut mesh_mappings_transparent = Vec::new();
@@ -423,19 +536,32 @@ impl GraphicsState {
         let mut instance_start_this_mesh = 0;
         let mut instance_start_this_mesh_transparent = 0;
 
+        let mut i_opaque = 0;
+        let mut i_transparent = 0;
+
+        // Build mesh-based instances.
         for (i, mesh) in self.scene.meshes.iter().enumerate() {
             let mut instance_count_this_mesh = 0;
             let mut instance_count_this_mesh_transparent = 0;
 
-            for entity in self.scene.entities.iter().filter(|e| e.mesh == i) {
-                let instance: Instance = entity.into();
+            for entity in self.scene.entities.iter_mut().filter(|e| e.mesh == i) {
+                let instance: Instance = (&*entity).into();
 
                 if entity.opacity < 0.99 {
                     instances_transparent.push(instance);
                     instance_count_this_mesh_transparent += 1;
+
+                    // For our in-place replacement system.
+                    entity.buf_i = Some(i_transparent);
+                    entity.buf_is_transparent = true;
+                    i_transparent += 1;
                 } else {
                     instances.push(instance);
                     instance_count_this_mesh += 1;
+
+                    entity.buf_i = Some(i_opaque);
+                    entity.buf_is_transparent = false;
+                    i_opaque += 1;
                 }
             }
 
@@ -457,58 +583,22 @@ impl GraphicsState {
             instance_start_this_mesh_transparent += instance_count_this_mesh_transparent;
         }
 
-        let mut instance_data = Vec::with_capacity(instances.len() * INSTANCE_SIZE);
-        for instance in &instances {
-            for byte in instance.to_bytes() {
-                instance_data.push(byte);
-            }
-        }
+        self.mesh_mappings = mesh_mappings;
+        self.mesh_mappings_transparent = mesh_mappings_transparent;
 
-        let mut instance_data_transparent =
-            Vec::with_capacity(instances_transparent.len() * INSTANCE_SIZE);
-        for instance in &instances_transparent {
-            for byte in instance.to_bytes() {
-                instance_data_transparent.push(byte);
-            }
-        }
-
-        // We can't update using a queue due to buffer size mismatches.
-        let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Instance buffer"),
-            contents: &instance_data,
-            usage: BufferUsages::VERTEX,
-        });
-
-        let instance_buf_transparent = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Instance buffer transparent"),
-            contents: &instance_data_transparent,
-            usage: BufferUsages::VERTEX,
-        });
-
-        let mut instances_gauss = Vec::with_capacity(self.scene.gaussians.len());
+        // Build gaussian-based instances.
         for gauss in &self.scene.gaussians {
             instances_gauss.push(gauss.to_instance());
         }
 
-        let mut instance_gauss_data = Vec::with_capacity(instances_gauss.len() * INSTANCE_SIZE);
-        for instance in &instances_gauss {
-            for byte in instance.to_bytes() {
-                instance_gauss_data.push(byte);
-            }
-        }
-
-        let instance_buf_gauss = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Gaussian Instance buffer"),
-            contents: &instance_gauss_data,
-            usage: BufferUsages::VERTEX,
-        });
-
-        self.instance_buf = instance_buf;
-        self.instance_buf_transparent = instance_buf_transparent;
-        self.instance_buf_gauss = instance_buf_gauss;
-
-        self.mesh_mappings = mesh_mappings;
-        self.mesh_mappings_transparent = mesh_mappings_transparent;
+        self.instance_buf = setup_instance_buf(device, &instances, "Instance buffer");
+        self.instance_buf_transparent = setup_instance_buf(
+            device,
+            &instances_transparent,
+            "Instance buffer transparent",
+        );
+        self.instance_buf_gauss =
+            setup_instance_buf_gauss(device, &instances_gauss, "Instance buffer Gaussian");
     }
 
     pub(crate) fn update_camera(&mut self, queue: &Queue) {
@@ -670,7 +760,7 @@ impl GraphicsState {
     }
 
     /// The entry point to 3D and GUI rendering.
-    /// Note:  `resize_required`, the return, is to handle changes in GUI size.
+    /// Note: `resize_required`, the return, is to handle changes in GUI size.
     pub(crate) fn render<T>(
         &mut self,
         gui: &mut GuiState,
@@ -1008,4 +1098,42 @@ fn create_bindgroups(
         layout_texture,
         // texture
     }
+}
+
+fn setup_instance_buf(device: &Device, instances: &[Instance], name: &str) -> Buffer {
+    let mut instance_data = Vec::with_capacity(instances.len() * INSTANCE_SIZE);
+
+    for instance in instances {
+        for byte in instance.to_bytes() {
+            instance_data.push(byte);
+        }
+    }
+
+    // We can't update using a queue due to buffer size mismatches.
+    device.create_buffer_init(&BufferInitDescriptor {
+        label: Some(name),
+        contents: &instance_data,
+        // usage: BufferUsages::VERTEX,
+        // COPY_DST allows us to copy updates into an existing buffer.
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+    })
+}
+
+// todo: DRY due simply to the instance type being different.
+fn setup_instance_buf_gauss(device: &Device, instances: &[GaussianInstance], name: &str) -> Buffer {
+    let mut instance_data = Vec::with_capacity(instances.len() * INSTANCE_SIZE);
+
+    for instance in instances {
+        for byte in instance.to_bytes() {
+            instance_data.push(byte);
+        }
+    }
+
+    // We can't update using a queue due to buffer size mismatches.
+    device.create_buffer_init(&BufferInitDescriptor {
+        label: Some(name),
+        contents: &instance_data,
+        // usage: BufferUsages::VERTEX,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+    })
 }

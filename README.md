@@ -212,7 +212,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     &state.snapshots[state.ui.snapshot_selected],
                 );
 
-                engine_updates.entities = true;
+                // Or, engine_updates.entities.push_class(EntityClass::MyClass as u32) for 
+                // slightly faster updates to a few entities.
+                engine_updates.entities = EntityUpdate::All;
             }
         });
 

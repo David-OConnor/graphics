@@ -21,6 +21,7 @@ use winit::{
 };
 
 use crate::{
+    EntityUpdate,
     graphics::GraphicsState,
     gui::GuiState,
     texture::Texture,
@@ -322,8 +323,42 @@ pub(crate) fn process_engine_updates(
         g_state.setup_entities(device);
     }
 
-    if engine_updates.entities {
-        g_state.setup_entities(device);
+    // todo: Alternative structure: Have this function just be for the full replacement,
+    // todo: And pass `replace_instance_entries` to teh engine update cycle.
+    // match update_type {
+    //     EntityUpdate::Classes(v) => {
+    //         self.replace_instance_entries(queue, v, false);
+    //         return;
+    //     }
+    //     EntityUpdate::Ids(v) => {
+    //         self.replace_instance_entries(queue, v, true);
+    //         return;
+    //     }
+    //     _ => ()
+    // }
+
+    // todo: Temp marked all until we sort out how to do this properly.
+    match &engine_updates.entities {
+        EntityUpdate::None => (),
+        EntityUpdate::All => g_state.setup_entities(device),
+        // Classes, IDs, or indexes.
+        _ => g_state.replace_instance_entries(queue, device, &engine_updates.entities),
+        //
+        // EntityUpdate::Classes(classes) => {
+        //     if !classes.is_empty() {
+        //         // g_state.replace_instance_entries(queue, device, classes, false);
+        //         g_state.replace_instance_entries(queue, device, &engine_updates.entities);
+        //     }
+        // }
+        // EntityUpdate::Ids(ids) => {
+        //     if !ids.is_empty() {
+        //        // g_state.replace_instance_entries(queue, device, ids, true);
+        //        g_state.replace_instance_entries(queue, device, &engine_updates.entities);
+        //     }
+        // }
+        // EntityUpdate::Indexes(index_range) => {
+        //     g_state.replace_instance_entries(queue, device, &engine_updates.entities);
+        // }
     }
 
     if engine_updates.camera {
