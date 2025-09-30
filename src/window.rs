@@ -117,7 +117,10 @@ where
 
         let attributes = WindowAttributes::default()
             .with_title(&self.scene.window_title)
+            // Physical size vs logical size has implications for pixel-scaled setups,
+            // like some high-resolution but small-screen tablets and laptops.
             .with_inner_size(winit::dpi::LogicalSize::new(
+            // .with_inner_size(winit::dpi::PhysicalSize::new(
                 self.scene.window_size.0,
                 self.scene.window_size.1,
             ))
