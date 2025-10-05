@@ -69,7 +69,7 @@ where
                 let layout = self.ui_settings.layout;
 
                 let resize_required = graphics.render(
-                    &mut self.gui.as_mut().unwrap(),
+                    self.gui.as_mut().unwrap(),
                     output_frame,
                     &surface_texture,
                     &sys.device,

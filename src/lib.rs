@@ -1,4 +1,5 @@
 #![allow(mixed_script_confusables)] // Theta in meshes
+#![allow(clippy::too_many_arguments)]
 
 //! A 3D rendering engine for rust programs, with GUI integration
 //!

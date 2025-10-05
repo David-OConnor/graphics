@@ -186,7 +186,7 @@ where
 
         let mut sys = self.render.as_mut().unwrap();
         let graphics = self.graphics.as_mut().unwrap();
-        let mut gui = self.gui.as_mut().unwrap();
+        let gui = self.gui.as_mut().unwrap();
 
         if new_size.width > 0 && new_size.height > 0 {
             sys.size = new_size;

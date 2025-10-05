@@ -74,7 +74,7 @@ impl Lighting {
         i += F32_SIZE;
 
         copy_ne!(buf_fixed_size, self.point_lights.len() as i32, i..i + 4);
-        i += F32_SIZE; // i32
+        // i += F32_SIZE; // i32
 
         for byte in buf_fixed_size.into_iter() {
             result.push(byte);

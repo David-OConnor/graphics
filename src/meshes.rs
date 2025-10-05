@@ -52,7 +52,7 @@ impl Mesh {
     /// `grid`'s outer vec is rows; inner vec is col-associated values within that
     /// row. The grid is evenly-spaced.
     /// todo:  You should draw both sides.
-
+    ///
     /// Create a sided surface. Useful as terrain, or as a 2-sided plot.
     /// Note that the grid is viewed here as x, z, with values in y direction, to be compatible
     /// with the convention of Z-up used elsewhere.
@@ -68,8 +68,8 @@ impl Mesh {
         let mut this_vert_i = 0;
 
         // Note: Y is
-        for (i, rows) in points.into_iter().enumerate() {
-            for (j, point) in rows.into_iter().enumerate() {
+        for (i, rows) in points.iter().enumerate() {
+            for (j, point) in rows.iter().enumerate() {
                 let x = point.x;
                 let y = point.z; // Swap y and z coords.
                 let z = point.y;
@@ -137,7 +137,7 @@ impl Mesh {
             let orig_vert_len = vertices.len();
             let mut vertices_other_side = Vec::new();
             for vertex in &vertices {
-                let mut new_vertex = vertex.clone();
+                let mut new_vertex = *vertex;
                 new_vertex.normal *= -1.;
                 vertices_other_side.push(new_vertex);
             }
@@ -264,10 +264,8 @@ impl Mesh {
 
         // Flatten the faces into the indices vector.
         for face in &mut faces {
-            if subdivisions % 2 == 0 {
-                let first = face[0];
-                face[0] = face[1];
-                face[1] = first;
+            if subdivisions.is_multiple_of(2) {
+                face.swap(0, 1);
             }
             indices.extend_from_slice(face);
         }
@@ -459,8 +457,8 @@ impl Mesh {
             i_vertex += 1;
         }
 
-        let top_anchor = i_vertex;
-        let bottom_anchor = i_vertex + 1;
+        let _top_anchor = i_vertex;
+        let _bottom_anchor = i_vertex + 1;
 
         // for (j, vert) in circle_vertices_inner.iter().enumerate() {
         //     // We need num_sides - 2 triangles using this anchor-vertex algorithm.

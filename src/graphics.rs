@@ -1,16 +1,7 @@
 //! This module contains the core part of interaction with the graphics API. It is tied closely
 //! to the WGPU library. We set up pipelines, populate vertex and index buffers, define shaders,
-//! and create render passes.
-//!
-//! See [Official WGPU examples](https://github.com/gfx-rs/wgpu/tree/master/wgpu/examples)
-//! See [Bevy Garphics](https://github.com/bevyengine/bevy/blob/main/crates/bevy_render) for
-//! a full graphics engine example that uses Wgpu.
-//! https://sotrh.github.io/learn-wgpu/
-//!
-//! https://github.com/sotrh/learn-wgpu/tree/master/code/intermediate/tutorial12-camera/src
-//! https://github.com/gfx-rs/wgpu/tree/master/wgpu/examples/shadow
-//!
-//! 2022-08-21: https://github.com/gfx-rs/wgpu/blob/master/wgpu/examples/cube/main.rs
+//! and create render passes. This is the core of the rendering logic, and along with shaders,
+//! represents most of what affects how items are drawn.
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
@@ -27,7 +18,6 @@ use wgpu::{
 use winit::{event::DeviceEvent, window::Window};
 
 use crate::{
-    Entity, Gaussian,
     camera::CAMERA_SIZE,
     gauss::{
         CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, GaussianInstance, QUAD_VERTEX_LAYOUT,
@@ -187,12 +177,11 @@ impl GraphicsState {
             // this is due to the dynamic-sized point light array.
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
-        //
-
-        let bind_groups = create_bindgroups(device, &cam_buf, &cam_basis_buf, &lighting_buf);
 
         let depth_texture =
             Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_samples);
+
+        let bind_groups = create_bindgroups(device, &cam_buf, &cam_basis_buf, &lighting_buf, &depth_texture.view);
 
         let shader_mesh = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Graphics shader"),
@@ -939,9 +928,9 @@ pub(crate) struct BindGroupData {
 fn create_bindgroups(
     device: &Device,
     cam_buf: &Buffer,
-    // cam_buf_sep: &Buffer,
     cam_basis_buf: &Buffer,
     lighting_buf: &Buffer,
+    depth_view: &TextureView, // todo: For our fade-behind logic
 ) -> BindGroupData {
     let cam_entry = wgpu::BindGroupLayoutEntry {
         binding: 0,
@@ -957,9 +946,51 @@ fn create_bindgroups(
     };
 
     // We only need vertex, not fragment info in the camera uniform.
+    // let layout_cam = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    //     entries: &[cam_entry.clone()],
+    //     label: Some("Camera bind group layout"),
+    // });
+    //
+    // todo: Feature gate this and the shader portion to be only when
+    // todo enabled by the application
+    // todo: Experimenting for our fading-rear-objects technique
     let layout_cam = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[cam_entry.clone()],
+        entries: &[
+            cam_entry.clone(),
+            // binding 1: sampleable depth texture
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    // IMPORTANT: depth sample type
+                    sample_type: wgpu::TextureSampleType::Depth,
+                },
+                count: None,
+            },
+            // binding 2: regular filtering sampler (non-comparison)
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
         label: Some("Camera bind group layout"),
+    });
+
+    // todo: Experimenting with fading objects behind the front
+    let depth_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("Depth sampler"),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Nearest,
+        min_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::FilterMode::Nearest,
+        compare: None, // non-comparison sampling
+        ..Default::default()
     });
 
     let cam = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -967,7 +998,19 @@ fn create_bindgroups(
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
             resource: cam_buf.as_entire_binding(),
-        }],
+        },
+            // todo: These entries are part of our fade-distant objects attempt.
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&depth_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(&depth_sampler),
+            },
+
+
+        ],
         label: Some("Camera bind group"),
     });
 

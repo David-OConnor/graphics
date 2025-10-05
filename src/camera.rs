@@ -1,7 +1,6 @@
 //! Code to manage the camera.
 
 use core::f32::consts::TAU;
-use std::f32::consts::LN_2;
 
 use lin_alg::f32::{Mat4, Quaternion, Vec3};
 
