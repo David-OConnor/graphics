@@ -2,7 +2,7 @@
 
 use core::f32::consts::TAU;
 
-use lin_alg::f32::{Mat4, Quaternion, Vec3};
+use lin_alg::f32::{Mat4, Quaternion, Vec3, Vec4};
 
 use crate::{
     copy_ne,
@@ -89,11 +89,23 @@ impl Camera {
         (width, height)
     }
 
-    // /// Set fog density so that objects at the specified distance are attenuated to 50% of their
-    // /// original visibility.
-    // pub fn set_fog_half_distance(&mut self, half_distance: Option<f32>) {
-    //     self.fog_density = half_distance.map_or(0.0, |d| LN_2 / d.max(1e-6));
-    // }
+    /// A utility function not used by the engine, but may be called by applications.
+    pub fn in_view(&self, point: Vec3) -> bool {
+        // todo: QC this
+        let pv = self.proj_mat.clone() * self.view_mat();
+        let p = pv * Vec4::new(point.x, point.y, point.z, 1.0);
+        let w = p.w;
+
+        if w <= 0.0 {
+            return false;
+        }
+
+        let x = p.x / w;
+        let y = p.y / w;
+        let z = p.z / w;
+
+        x >= -1.0 && x <= 1.0 && y >= -1.0 && y <= 1.0 && z >= 0.0 && z <= 1.0
+    }
 }
 
 impl Default for Camera {
