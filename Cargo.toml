@@ -1,6 +1,6 @@
 [package]
 name = "graphics"
-version = "0.4.8"
+version = "0.4.9"
 authors = ["David O'Connor <the_alchemist@fastmail.com>"]
 description = "A 3D rendering engine for rust programs, with GUI integration"
 edition = "2024"
@@ -20,11 +20,11 @@ license = "MIT"
 lin_alg = { version = "1.1.8", features = ["computer_graphics"] }
 
 # 3D and graphics libraries. There is a degree of interdependence between them.
-wgpu = "25.0.0"
+wgpu = "27.0.1"
 winit = "0.30.11"
-egui = "0.32.0"
-egui-wgpu = "0.32.0"
-egui-winit = "0.32.0"
+egui = "0.33.0"
+egui-wgpu = "0.33.0"
+egui-winit = "0.33.0"
 
 pollster = "0.4.0"  # For 2 WGPU init fns that use async.
 image = "0.25.2" # For loading textures

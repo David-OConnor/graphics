@@ -36,7 +36,7 @@ pub struct InputsCommanded {
 impl InputsCommanded {
     /// Return true if there are any inputs.
     pub fn inputs_present(&self) -> bool {
-        // Note; We don't include `run` or `free_look` here, since they're modifiers..
+        // Note; We don't include `run` or `free_look` here, since they're modifiers.
         self.fwd
             || self.back
             || self.left

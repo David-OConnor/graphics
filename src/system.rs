@@ -10,8 +10,8 @@ use std::{
 };
 
 use wgpu::{
-    Adapter, Backends, Device, Features, Instance, InstanceDescriptor, PowerPreference, Queue,
-    Surface, SurfaceConfiguration, TextureFormat,
+    Adapter, Backends, Device, ExperimentalFeatures, Features, Instance, InstanceDescriptor,
+    PowerPreference, Queue, Surface, SurfaceConfiguration, TextureFormat,
 };
 use winit::{
     dpi::PhysicalSize,
@@ -36,7 +36,7 @@ pub const DEPTH_FORMAT: TextureFormat = TextureFormat::Depth32Float;
 pub(crate) struct RenderState {
     pub size: PhysicalSize<u32>,
     pub surface: Surface<'static>, // Sshare the same lifetime as the window, A/R.
-    pub adapter: Adapter,
+    // pub adapter: Adapter,
     pub device: Device,
     pub queue: Queue,
     pub surface_cfg: SurfaceConfiguration,
@@ -121,7 +121,7 @@ where
 
         let surface = self.instance.create_surface(window.clone()).unwrap();
 
-        let (adapter, device, queue) = pollster::block_on(setup_async(&self.instance, &surface));
+        let (_adapter, device, queue) = pollster::block_on(setup_async(&self.instance, &surface));
 
         // The surface is the part of the window that we draw to. We need it to draw directly to the
         // screen. Our window needs to implement raw-window-handle (opens new window)'s
@@ -152,7 +152,7 @@ where
         let render = RenderState {
             size,
             surface,
-            adapter,
+            // adapter,
             device,
             queue,
             surface_cfg,
@@ -299,6 +299,7 @@ async fn setup_async(instance: &Instance, surface: &Surface<'static>) -> (Adapte
                 required_limits: Default::default(),
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
+                experimental_features: ExperimentalFeatures::disabled(),
             },
             // std::env::var("WGPU_TRACE")
             //     .ok()

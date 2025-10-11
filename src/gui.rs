@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use egui::{ClippedPrimitive, Context, FullOutput};
-use egui_wgpu::{Renderer, ScreenDescriptor};
+use egui_wgpu::{Renderer, RendererOptions, ScreenDescriptor};
 use egui_winit;
 use wgpu::{self, CommandEncoder, Device, Queue, TextureFormat};
 use winit::window::Window;
@@ -47,9 +47,12 @@ impl GuiState {
         let egui_renderer = Renderer::new(
             device,
             texture_format,
-            Some(DEPTH_FORMAT),
-            msaa_samples,
-            false, // todo: Dithering?
+            RendererOptions {
+                msaa_samples,
+                depth_stencil_format: Some(DEPTH_FORMAT),
+                dithering: false,
+                predictable_texture_filtering: false,
+            },
         );
 
         Self {

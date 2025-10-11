@@ -27,7 +27,6 @@ use wgpu::{
 use winit::{event::DeviceEvent, window::Window};
 
 use crate::{
-    Entity, Gaussian,
     camera::CAMERA_SIZE,
     gauss::{
         CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, GaussianInstance, QUAD_VERTEX_LAYOUT,
@@ -654,6 +653,7 @@ impl GraphicsState {
             // Use MSAA texture as render target, resolve to the swap chain texture
             wgpu::RenderPassColorAttachment {
                 view: msaa_texture,
+                depth_slice: None, // todo: Introduced in GPU27. Should we use it?
                 resolve_target: Some(output_view), // Resolve the multisample texture
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -663,6 +663,7 @@ impl GraphicsState {
         } else {
             wgpu::RenderPassColorAttachment {
                 view: output_view,
+                depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
