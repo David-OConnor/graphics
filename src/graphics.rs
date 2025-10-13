@@ -74,28 +74,26 @@ pub enum EntityUpdate {
     Ids(Vec<u32>),
     /// A range of start and end indexes.
     Indexes((usize, usize)),
+    /// Append this many to the end
+    Append(usize)
 }
 
 impl EntityUpdate {
     pub fn push_class(&mut self, class: u32) {
         match self {
-            EntityUpdate::None => *self = EntityUpdate::Classes(vec![class]),
             EntityUpdate::All => (),
             // todo: Support for updating both classes and IDs at once.
             EntityUpdate::Classes(v) => v.push(class),
-            EntityUpdate::Ids(_) => *self = EntityUpdate::Classes(vec![class]),
-            EntityUpdate::Indexes(_) => *self = EntityUpdate::Classes(vec![class]),
+            _=> *self = EntityUpdate::Classes(vec![class]),
         }
     }
 
     pub fn push_id(&mut self, id: u32) {
         match self {
-            EntityUpdate::None => *self = EntityUpdate::Ids(vec![id]),
             EntityUpdate::All => (),
             // todo: Support for updating both classes and IDs at once.
-            EntityUpdate::Classes(_) => *self = EntityUpdate::Ids(vec![id]),
             EntityUpdate::Ids(v) => v.push(id),
-            EntityUpdate::Indexes(_) => *self = EntityUpdate::Ids(vec![id]),
+            _ => *self = EntityUpdate::Ids(vec![id]),
         }
     }
 }
