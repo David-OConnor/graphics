@@ -2,6 +2,7 @@
 
 #[cfg(feature = "app_utils")]
 use bincode::{Decode, Encode};
+use egui::FontFamily;
 use lin_alg::f32::{Mat4, Quaternion, Vec3, Vec4};
 use wgpu::{VertexAttribute, VertexBufferLayout, VertexFormat};
 
@@ -259,6 +260,26 @@ pub struct Mesh {
     pub material: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct TextOverlay {
+    pub text: String,
+    pub size: f32,
+    /// Red, Greed, Blue, alpha
+    pub color: (u8, u8, u8, u8),
+    pub font_family: FontFamily,
+}
+
+impl Default for TextOverlay {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            size: 13.,
+            color: (255, 255, 255, 255),
+            font_family: FontFamily::Proportional,
+        }
+    }
+}
+
 /// Represents an entity in the world. This is not fundamental to the WGPU system.
 #[derive(Clone, Debug)]
 pub struct Entity {
@@ -286,6 +307,8 @@ pub struct Entity {
     /// Used for replacing entities without rebuilding the buffer.
     /// Which buffer this slot is in.
     pub buf_is_transparent: bool,
+    /// Display text over (or near) the element.
+    pub overlay_text: Option<TextOverlay>,
 }
 
 impl Default for Entity {
@@ -303,6 +326,7 @@ impl Default for Entity {
             shinyness: 0.,
             buf_i: None,
             buf_is_transparent: false,
+            overlay_text: None,
         }
     }
 }
@@ -317,18 +341,13 @@ impl Entity {
         shinyness: f32,
     ) -> Self {
         Self {
-            id: 0,
-            class: 0,
             mesh,
             position,
             orientation,
             scale,
-            scale_partial: None,
             color,
-            opacity: 1.,
             shinyness,
-            buf_i: None,
-            buf_is_transparent: false,
+            ..Default::default()
         }
     }
 }

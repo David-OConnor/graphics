@@ -323,4 +323,27 @@ fn main() {
 }
 ```
 
+You can add overlay text using the entity's `overlay_text` field:
+```rust
+let mut entity = Entity::new(
+    mesh,
+    mol.common().atom_posits[i_atom].into(),
+    Quaternion::new_identity(),
+    radius,
+    color,
+    ATOM_SHININESS,
+);
+
+// Or, use the default `TextOverlay` implementation, and override fields as required.
+entity.overlay_text = Some(TextOverlay {
+    text: format!("Atom # {}", atom.serial_number),
+    size: 14.,
+    color: (120, 100, 255, 255),
+    font_family: FontFamily::Proportional,
+});
+
+entity.class = mol.mol_type().entity_type() as u32;
+```
+
+
 ![Mol viewer screenshot](screenshots/mol_viewer_2025.png)
