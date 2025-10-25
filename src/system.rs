@@ -184,7 +184,7 @@ where
             return;
         }
 
-        let mut sys = self.render.as_mut().unwrap();
+        let sys = self.render.as_mut().unwrap();
         let graphics = self.graphics.as_mut().unwrap();
         let gui = self.gui.as_mut().unwrap();
 

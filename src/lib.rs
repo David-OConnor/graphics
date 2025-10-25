@@ -21,6 +21,7 @@ mod input;
 pub mod lighting;
 mod meshes;
 mod system;
+mod text_overlay;
 mod texture;
 mod types;
 mod window;
@@ -31,9 +32,10 @@ pub use graphics::{EntityUpdate, FWD_VEC, RIGHT_VEC, UP_VEC};
 pub use input::{InputsCommanded, adjust_camera_free, arc_rotation};
 pub use lighting::{LightType, Lighting, PointLight};
 pub use system::run;
+pub use text_overlay::TextOverlay;
 pub use types::{
     ControlScheme, EngineUpdates, Entity, GraphicsSettings, InputSettings, Mesh, Scene,
-    ScrollBehavior, TextOverlay, UiLayout, UiSettings, Vertex,
+    ScrollBehavior, UiLayout, UiSettings, Vertex,
 };
 // Re-export winit DeviceEvents for use in the API; this prevents the calling
 // lib from needing to use winit as a dependency directly.

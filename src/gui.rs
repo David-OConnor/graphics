@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use egui::{ClippedPrimitive, Context, FullOutput};
 use egui_wgpu::{Renderer, RendererOptions, ScreenDescriptor};
-use egui_winit;
 use wgpu::{self, CommandEncoder, Device, Queue, TextureFormat};
 use winit::window::Window;
 

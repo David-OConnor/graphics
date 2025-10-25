@@ -60,7 +60,7 @@ impl Mesh {
     /// Points are (x, y, z), with Z being the vertical component. Their indices correspond to how they're
     /// tied together in a mesh.
     // pub fn new_surface(grid: &Vec<Vec<f32>>, start: f32, step: f32, two_sided: bool) -> Self {
-    pub fn new_surface(points: &Vec<Vec<Vec3>>, two_sided: bool) -> Self {
+    pub fn new_surface(points: &[Vec<Vec3>], two_sided: bool) -> Self {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
 
@@ -803,7 +803,7 @@ impl Mesh {
     /// [File type description](https://en.wikipedia.org/wiki/Wavefront_.obj_file)
     /// [Example](https://github.com/gfx-rs/wgpu/blob/master/wgpu/examples/skybox/main.rs)
     pub fn from_obj(obj_data: &[u8]) -> Self {
-        let data = obj::ObjData::load_buf(&obj_data[..]).unwrap();
+        let data = obj::ObjData::load_buf(obj_data).unwrap();
         let mut vertices = Vec::new();
 
         for object in data.objects {

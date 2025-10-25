@@ -89,22 +89,25 @@ impl Camera {
         (width, height)
     }
 
-    /// A utility function not used by the engine, but may be called by applications.
-    pub fn in_view(&self, point: Vec3) -> bool {
-        // todo: QC this
+    /// Determines if an object is in view. Also returns NDC coordinates, for use
+    /// in some applications.
+    pub fn in_view(&self, point: Vec3) -> (bool, (f32, f32, f32)) {
         let pv = self.proj_mat.clone() * self.view_mat();
-        let p = pv * Vec4::new(point.x, point.y, point.z, 1.0);
-        let w = p.w;
+        let p4 = pv * Vec4::new(point.x, point.y, point.z, 1.0);
 
-        if w <= 0.0 {
-            return false;
+        if p4.w <= 0.0 {
+            return Default::default();
         }
 
-        let x = p.x / w;
-        let y = p.y / w;
-        let z = p.z / w;
+        let inv_w = 1.0 / p4.w;
+        let x = p4.x * inv_w;
+        let y = p4.y * inv_w;
+        let z = p4.z * inv_w;
 
-        x >= -1.0 && x <= 1.0 && y >= -1.0 && y <= 1.0 && z >= 0.0 && z <= 1.0
+        let iv =
+            (-1.0..=1.0).contains(&x) && (-1.0..=1.0).contains(&y) && (-1.0..=1.0).contains(&z);
+
+        (iv, (x, y, z))
     }
 }
 
