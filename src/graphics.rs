@@ -833,8 +833,7 @@ impl GraphicsState {
             layout,
         );
 
-        // Draw text on the screen.
-        // todo: Consider a fn for this.
+        // Draw text overlays over entities, if configured.
         {
             let ctx = gui.egui_state.egui_ctx();
 
@@ -853,7 +852,6 @@ impl GraphicsState {
                     pos,
                     Align2::CENTER_BOTTOM,
                     &overlay.text,
-                    // todo: Font size may need to be part of the label.
                     FontId::new(overlay.size, overlay.font_family.clone()),
                     Color32::from_rgba_unmultiplied(r, g, b, a),
                 );
