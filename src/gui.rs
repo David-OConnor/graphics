@@ -95,6 +95,8 @@ impl GuiState {
                 UiLayout::Left | UiLayout::Right => ctx.used_size().x,
                 _ => ctx.used_size().y,
             };
+            // todo: How to fix this? Here or in applications?
+            // } * ctx.pixels_per_point();
 
             // This error doesn't make much sense, but seems to occur when there is no GUI.
             if new_size == f32::NEG_INFINITY {

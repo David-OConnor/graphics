@@ -140,6 +140,7 @@ impl GraphicsState {
         pixels_per_pt: f32,
     ) -> Vec<(Pos2, &TextOverlay)> {
         let mut out = Vec::new();
+
         for e in &self.scene.entities {
             if let Some(overlay) = &e.overlay_text {
                 // Slight vertical offset above the entity (tune as you like).
