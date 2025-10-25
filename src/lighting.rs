@@ -153,7 +153,7 @@ impl PointLight {
             i += VEC3_SIZE;
 
             copy_ne!(result, fov, i..i + F32_SIZE);
-            i += F32_SIZE;
+            // i += F32_SIZE;
         }
 
         result

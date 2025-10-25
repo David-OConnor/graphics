@@ -14,8 +14,8 @@
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use egui::{Align2, Color32, Context, FontId, Pos2};
-use lin_alg::f32::{Vec3, Vec4};
+use egui::Context;
+use lin_alg::f32::Vec3;
 use wgpu::{
     self, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer, BufferBindingType,
     BufferUsages, CommandEncoder, CommandEncoderDescriptor, DepthStencilState, Device, Face,
@@ -27,7 +27,6 @@ use wgpu::{
 use winit::{event::DeviceEvent, window::Window};
 
 use crate::{
-    TextOverlay,
     camera::CAMERA_SIZE,
     gauss::{
         CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, GaussianInstance, QUAD_VERTEX_LAYOUT,
@@ -36,6 +35,7 @@ use crate::{
     gui::GuiState,
     input::{self, InputsCommanded},
     system::{DEPTH_FORMAT, process_engine_updates},
+    text_overlay::draw_text_overlay,
     texture::Texture,
     types::{
         ControlScheme, EngineUpdates, INSTANCE_LAYOUT, INSTANCE_SIZE, InputSettings, Instance,
@@ -397,7 +397,7 @@ impl GraphicsState {
     pub(crate) fn handle_input(&mut self, event: &DeviceEvent, input_settings: &InputSettings) {
         match input_settings.control_scheme {
             ControlScheme::FreeCamera | ControlScheme::Arc { center: _ } => {
-                input::add_input_cmd(&event, &mut self.inputs_commanded)
+                input::add_input_cmd(event, &mut self.inputs_commanded)
             }
             _ => unimplemented!(),
         }
@@ -833,30 +833,8 @@ impl GraphicsState {
             layout,
         );
 
-        // Draw text overlays over entities, if configured.
-        {
-            let ctx = gui.egui_state.egui_ctx();
-
-            // Compute label positions in screen space
-            let labels = self.collect_entity_labels(width, height, ui_settings, gui.size);
-
-            // Paint in the foreground layer
-            let painter = ctx.layer_painter(egui::LayerId::new(
-                egui::Order::Foreground,
-                egui::Id::new("entity_labels"),
-            ));
-            for (pos, overlay) in labels {
-                let (r, g, b, a) = overlay.color;
-
-                painter.text(
-                    pos,
-                    Align2::CENTER_BOTTOM,
-                    &overlay.text,
-                    FontId::new(overlay.size, overlay.font_family.clone()),
-                    Color32::from_rgba_unmultiplied(r, g, b, a),
-                );
-            }
-        }
+        // Draw text on the screen.
+        draw_text_overlay(self, gui, ui_settings, width, height);
 
         // Note: If we process engine updates after setting up the render pass, we will not be
         // able to add meshes at runtime; code run from the `engine_updates.meshes` flag must be
@@ -888,106 +866,6 @@ impl GraphicsState {
         surface_texture.present();
 
         resize_required
-    }
-
-    /// We use this for the text overlay
-    fn viewport_rect(
-        &self,
-        ui_size: f32,
-        width: u32,
-        height: u32,
-        ui_settings: &UiSettings,
-    ) -> (f32, f32, f32, f32) {
-        // Same logic as setup_render_pass; keep them in sync.
-        let (mut x, mut y, mut eff_width, mut eff_height) = match ui_settings.layout {
-            UiLayout::Left => (ui_size, 0., width as f32 - ui_size, height as f32),
-            UiLayout::Right => (0., 0., width as f32 - ui_size, height as f32),
-            UiLayout::Top => (0., ui_size, width as f32, height as f32 - ui_size),
-            UiLayout::Bottom => (0., 0., width as f32, height as f32 - ui_size),
-        };
-
-        match ui_settings.layout {
-            UiLayout::Left | UiLayout::Right => {
-                if ui_size > width as f32 {
-                    (x, y, eff_width, eff_height) = (0., 0., width as f32, height as f32);
-                }
-            }
-            _ => {
-                if ui_size >= height as f32 {
-                    (x, y, eff_width, eff_height) = (0., 0., width as f32, height as f32);
-                }
-            }
-        }
-        (x, y, eff_width, eff_height)
-    }
-
-    /// We use this for the text overlay.
-    /// Project a world-space point to screen-space (in egui points).
-    /// Returns None if behind camera or outside clip space.
-    pub fn world_to_screen(
-        &self,
-        world: Vec3,
-        width: u32,
-        height: u32,
-        ui_settings: &UiSettings,
-        ui_size: f32,
-    ) -> Option<Pos2> {
-        let (vx, vy, vw, vh) = self.viewport_rect(ui_size, width, height, ui_settings);
-
-        // Get proj*view on CPU – adapt to your Camera API as needed.
-        // If you already have proj_view(), use it directly.
-        let view = self.scene.camera.view_mat();
-        let pv = self.scene.camera.proj_mat.clone() * view;
-
-        // Homogeneous clip coords
-        let p4 = pv * Vec4::new(world.x, world.y, world.z, 1.0);
-
-        if p4.w <= 0.0 {
-            return None; // behind camera
-        }
-        let inv_w = 1.0 / p4.w;
-        let ndc_x = p4.x * inv_w;
-        let ndc_y = p4.y * inv_w;
-        let ndc_z = p4.z * inv_w;
-
-        // Optionally clip by depth as well:
-        if ndc_x < -1.0 || ndc_x > 1.0 || ndc_y < -1.0 || ndc_y > 1.0 || ndc_z < 0.0 || ndc_z > 1.0
-        {
-            return None;
-        }
-
-        // NDC -> pixels in 3D viewport
-        let sx = vx + (ndc_x * 0.5 + 0.5) * vw;
-        let sy = vy + (1.0 - (ndc_y * 0.5 + 0.5)) * vh; // flip Y for top-left origin
-
-        Some(Pos2::new(sx, sy))
-    }
-
-    /// Convenience: gather label screen positions for all entities that have `overlay_text`.
-    pub fn collect_entity_labels(
-        &self,
-        width: u32,
-        height: u32,
-        ui_settings: &UiSettings,
-        ui_size: f32,
-    ) -> Vec<(Pos2, &TextOverlay)> {
-        let mut out = Vec::new();
-        for e in &self.scene.entities {
-            if let Some(overlay) = &e.overlay_text {
-                // Slight vertical offset above the entity (tune as you like).
-                let label_world = Vec3 {
-                    x: e.position.x,
-                    y: e.position.y + 0.05 * e.scale, // small lift
-                    z: e.position.z,
-                };
-                if let Some(p) =
-                    self.world_to_screen(label_world, width, height, ui_settings, ui_size)
-                {
-                    out.push((p, overlay));
-                }
-            }
-        }
-        out
     }
 }
 
@@ -1057,7 +935,7 @@ pub(crate) struct BindGroupData {
     pub layout_lighting: BindGroupLayout,
     pub lighting: BindGroup,
     /// We use this for GUI.
-    pub layout_texture: BindGroupLayout,
+    pub _layout_texture: BindGroupLayout,
     // pub texture: BindGroup,
 }
 
@@ -1083,7 +961,7 @@ fn create_bindgroups(
 
     // We only need vertex, not fragment info in the camera uniform.
     let layout_cam = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[cam_entry.clone()],
+        entries: std::slice::from_ref(&cam_entry),
         label: Some("Camera bind group layout"),
     });
 
@@ -1220,7 +1098,7 @@ fn create_bindgroups(
         cam_gauss,
         layout_lighting,
         lighting,
-        layout_texture,
+        _layout_texture: layout_texture,
         // texture
     }
 }

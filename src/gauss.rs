@@ -1,3 +1,5 @@
+#![allow(clippy::wrong_self_convention)]
+
 //! This module contains code specific to gaussians. Not all gauss-specific code is here though.
 
 use lin_alg::f32::{Mat4, Vec3};

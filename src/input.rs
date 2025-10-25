@@ -58,73 +58,71 @@ impl InputsCommanded {
 pub(crate) fn add_input_cmd(event: &DeviceEvent, inputs: &mut InputsCommanded) {
     match event {
         DeviceEvent::Key(key) => {
+            let Code(key_code) = key.physical_key else {
+                return;
+            };
+
             if key.state == ElementState::Pressed {
-                match key.physical_key {
-                    Code(key) => match key {
-                        KeyCode::KeyW => {
-                            inputs.fwd = true;
-                        }
-                        KeyCode::KeyS => {
-                            inputs.back = true;
-                        }
-                        KeyCode::KeyA => {
-                            inputs.left = true;
-                        }
-                        KeyCode::KeyD => {
-                            inputs.right = true;
-                        }
-                        KeyCode::Space => {
-                            inputs.up = true;
-                        }
-                        KeyCode::KeyC => {
-                            inputs.down = true;
-                        }
-                        KeyCode::KeyQ => {
-                            inputs.roll_ccw = true;
-                        }
-                        KeyCode::KeyE => {
-                            inputs.roll_cw = true;
-                        }
-                        KeyCode::ShiftLeft => {
-                            inputs.run = true;
-                        }
-                        _ => (),
-                    },
+                match key_code {
+                    KeyCode::KeyW => {
+                        inputs.fwd = true;
+                    }
+                    KeyCode::KeyS => {
+                        inputs.back = true;
+                    }
+                    KeyCode::KeyA => {
+                        inputs.left = true;
+                    }
+                    KeyCode::KeyD => {
+                        inputs.right = true;
+                    }
+                    KeyCode::Space => {
+                        inputs.up = true;
+                    }
+                    KeyCode::KeyC => {
+                        inputs.down = true;
+                    }
+                    KeyCode::KeyQ => {
+                        inputs.roll_ccw = true;
+                    }
+                    KeyCode::KeyE => {
+                        inputs.roll_cw = true;
+                    }
+                    KeyCode::ShiftLeft => {
+                        inputs.run = true;
+                    }
                     _ => (),
                 }
             } else if key.state == ElementState::Released {
                 // todo: DRY
-                match key.physical_key {
-                    Code(key) => match key {
-                        KeyCode::KeyW => {
-                            inputs.fwd = false;
-                        }
-                        KeyCode::KeyS => {
-                            inputs.back = false;
-                        }
-                        KeyCode::KeyA => {
-                            inputs.left = false;
-                        }
-                        KeyCode::KeyD => {
-                            inputs.right = false;
-                        }
-                        KeyCode::Space => {
-                            inputs.up = false;
-                        }
-                        KeyCode::KeyC => {
-                            inputs.down = false;
-                        }
-                        KeyCode::KeyQ => {
-                            inputs.roll_ccw = false;
-                        }
-                        KeyCode::KeyE => {
-                            inputs.roll_cw = false;
-                        }
-                        KeyCode::ShiftLeft => {
-                            inputs.run = false;
-                        }
-                        _ => (),
-                    },
+                match key_code {
+                    KeyCode::KeyW => {
+                        inputs.fwd = false;
+                    }
+                    KeyCode::KeyS => {
+                        inputs.back = false;
+                    }
+                    KeyCode::KeyA => {
+                        inputs.left = false;
+                    }
+                    KeyCode::KeyD => {
+                        inputs.right = false;
+                    }
+                    KeyCode::Space => {
+                        inputs.up = false;
+                    }
+                    KeyCode::KeyC => {
+                        inputs.down = false;
+                    }
+                    KeyCode::KeyQ => {
+                        inputs.roll_ccw = false;
+                    }
+                    KeyCode::KeyE => {
+                        inputs.roll_cw = false;
+                    }
+                    KeyCode::ShiftLeft => {
+                        inputs.run = false;
+                    }
                     _ => (),
                 }
             }

@@ -104,13 +104,7 @@ where
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let icon = match self.ui_settings.icon_path {
-            Some(ref p) => {
-                match load_icon(Path::new(&p)) {
-                    Ok(p_) => Some(p_),
-                    // eg can't find the path
-                    Err(_) => None,
-                }
-            }
+            Some(ref p) => load_icon(Path::new(&p)).ok(),
             // No path specified
             None => None,
         };
@@ -205,8 +199,8 @@ where
             }
             // If the window scale changes, update the renderer size, and camera aspect ratio.
             WindowEvent::ScaleFactorChanged {
-                scale_factor,
-                inner_size_writer,
+                scale_factor: _,
+                inner_size_writer: _,
                 ..
             } => {
                 // Note: This appears to not come up, nor is it required. (Oct 2024)

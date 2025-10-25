@@ -2,11 +2,12 @@
 
 #[cfg(feature = "app_utils")]
 use bincode::{Decode, Encode};
-use egui::FontFamily;
 use lin_alg::f32::{Mat4, Quaternion, Vec3, Vec4};
 use wgpu::{VertexAttribute, VertexBufferLayout, VertexFormat};
 
-use crate::{EntityUpdate, camera::Camera, gauss::Gaussian, lighting::Lighting};
+use crate::{
+    EntityUpdate, camera::Camera, gauss::Gaussian, lighting::Lighting, text_overlay::TextOverlay,
+};
 
 // These sizes are in bytes. We do this, since that's the data format expected by the shader.
 pub const F32_SIZE: usize = 4;
@@ -258,26 +259,6 @@ pub struct Mesh {
     /// buffer, we offset them by previous meshes' vertex counts.
     pub indices: Vec<usize>,
     pub material: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct TextOverlay {
-    pub text: String,
-    pub size: f32,
-    /// Red, Greed, Blue, alpha
-    pub color: (u8, u8, u8, u8),
-    pub font_family: FontFamily,
-}
-
-impl Default for TextOverlay {
-    fn default() -> Self {
-        Self {
-            text: String::new(),
-            size: 13.,
-            color: (255, 255, 255, 255),
-            font_family: FontFamily::Proportional,
-        }
-    }
 }
 
 /// Represents an entity in the world. This is not fundamental to the WGPU system.
