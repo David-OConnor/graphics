@@ -65,6 +65,7 @@ where
     pub scene: Scene,
     pub last_render_time: Instant,
     pub dt: Duration,
+    pub paused: bool
 }
 
 impl<T: 'static, FRender, FEventDev, FEventWin, FGui> State<T, FRender, FEventDev, FEventWin, FGui>
@@ -110,6 +111,7 @@ where
             scene,
             last_render_time,
             dt,
+            paused: false,
         }
     }
 

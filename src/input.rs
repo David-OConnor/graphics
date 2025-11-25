@@ -31,6 +31,9 @@ pub struct InputsCommanded {
     pub scroll_down: bool,
     pub free_look: bool,
     pub panning: bool, // todo: Implement A/R
+    // todo: Move this A/R. Currently use it e.g. to disable scrolling moving if cursor
+    // todo is not in window,
+    pub cursor_out_of_window: bool
 }
 
 impl InputsCommanded {
@@ -56,6 +59,18 @@ impl InputsCommanded {
 /// dt is in seconds.
 /// pub(crate) fn handle_event(event: DeviceEvent, cam: &mut Camera, input_settings: &InputSettings, dt: f32) {
 pub(crate) fn add_input_cmd(event: &DeviceEvent, inputs: &mut InputsCommanded) {
+    // This blocks all key and mouse commands from activating if the cursor has left
+    // the window.
+    if inputs.cursor_out_of_window {
+        // Resetting inputs effectively "lifts" all pressed keys, so we don't get stuck
+        // moving in a direction when the cursor leaves.
+        *inputs = InputsCommanded {
+            cursor_out_of_window: true,
+            ..Default::default()
+        };
+        return;
+    }
+
     match event {
         DeviceEvent::Key(key) => {
             let Code(key_code) = key.physical_key else {

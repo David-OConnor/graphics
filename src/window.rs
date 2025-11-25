@@ -1,7 +1,7 @@
 //! Handles window initialization and events, using Winit.
 
 use std::{path::Path, time::Instant};
-
+use std::time::Duration;
 use image::ImageError;
 use wgpu::TextureViewDescriptor;
 use winit::{
@@ -34,7 +34,7 @@ where
     FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
 {
     fn redraw(&mut self) {
-        if self.render.is_none() || self.graphics.is_none() {
+        if self.paused || self.render.is_none() || self.graphics.is_none() {
             return;
         }
 
@@ -43,6 +43,12 @@ where
 
         let now = Instant::now();
         self.dt = now - self.last_render_time;
+
+        // Clamp, e.g. if the loop isn't running. (Maybe when minimized?)
+        if self.dt.as_secs() > 1 {
+            self.dt = Duration::from_secs(1);
+        }
+
         self.last_render_time = now;
 
         let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;
@@ -91,6 +97,8 @@ where
             // This occurs when minimized.
             Err(_e) => (),
         }
+
+        self.graphics.as_ref().unwrap().window.request_redraw();
     }
 }
 
@@ -165,8 +173,12 @@ where
 
         match event {
             WindowEvent::RedrawRequested => {
+                // if self.paused {
+                //     return;
+                // }
+                //
+                // self.graphics.as_ref().unwrap().window.request_redraw();
                 self.redraw();
-                self.graphics.as_ref().unwrap().window.request_redraw();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let mouse_in_gui = match self.ui_settings.layout {
@@ -193,7 +205,13 @@ where
                 event_loop.exit();
             }
             WindowEvent::Resized(physical_size) => {
-                self.resize(physical_size);
+                self.paused = physical_size.width == 0 || physical_size.height == 0;
+                if !self.paused {
+                    self.resize(physical_size);
+                    self.last_render_time = Instant::now();
+                    self.dt = Default::default();
+                }
+
                 // Prevents inadvertent mouse-click-activated free-look.
                 self.graphics.as_mut().unwrap().inputs_commanded.free_look = false;
             }
@@ -213,17 +231,33 @@ where
                 // Prevents inadvertent mouse-click-activated free-look after moving the window.
                 self.graphics.as_mut().unwrap().inputs_commanded.free_look = false;
             }
-            WindowEvent::Occluded(_) => {
+            WindowEvent::Occluded(occ) => {
+                self.paused = occ;
+
                 // Prevents inadvertent mouse-click-activated free-look after minimizing.
                 self.graphics.as_mut().unwrap().inputs_commanded.free_look = false;
+                if !self.paused {
+                    self.last_render_time = Instant::now();
+                    self.dt = Default::default();
+                }
             }
-            WindowEvent::Focused(_) => {
+            WindowEvent::Focused(focused) => {
                 // Eg clicking the tile bar icon.
+                self.paused = !focused;
                 self.graphics.as_mut().unwrap().inputs_commanded.free_look = false;
+                if focused {
+                    self.last_render_time = Instant::now();
+                    self.dt = Default::default();
+                }
             }
             WindowEvent::CursorLeft { device_id: _ } => {
                 // When the cursor moves out of the window, stop mouse-looking.
                 graphics.inputs_commanded.free_look = false;
+                graphics.inputs_commanded.cursor_out_of_window = true;
+
+            }
+            WindowEvent::CursorEntered { device_id: _} => {
+                graphics.inputs_commanded.cursor_out_of_window = false;
             }
             // This is required to prevent the application from freezing after dropping a file.
             WindowEvent::HoveredFile(_)
