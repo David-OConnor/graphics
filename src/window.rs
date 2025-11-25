@@ -97,8 +97,6 @@ where
             // This occurs when minimized.
             Err(_e) => (),
         }
-
-        self.graphics.as_ref().unwrap().window.request_redraw();
     }
 }
 
@@ -173,12 +171,11 @@ where
 
         match event {
             WindowEvent::RedrawRequested => {
-                // if self.paused {
-                //     return;
-                // }
-                //
-                // self.graphics.as_ref().unwrap().window.request_redraw();
                 self.redraw();
+
+                // todo: Only request the window redraw when required from an event etc. Will be
+                // todo much more efficient this way.
+                self.graphics.as_ref().unwrap().window.request_redraw();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let mouse_in_gui = match self.ui_settings.layout {
@@ -206,6 +203,7 @@ where
             }
             WindowEvent::Resized(physical_size) => {
                 self.paused = physical_size.width == 0 || physical_size.height == 0;
+
                 if !self.paused {
                     self.resize(physical_size);
                     self.last_render_time = Instant::now();
@@ -236,6 +234,7 @@ where
 
                 // Prevents inadvertent mouse-click-activated free-look after minimizing.
                 self.graphics.as_mut().unwrap().inputs_commanded.free_look = false;
+
                 if !self.paused {
                     self.last_render_time = Instant::now();
                     self.dt = Default::default();
@@ -244,6 +243,7 @@ where
             WindowEvent::Focused(focused) => {
                 // Eg clicking the tile bar icon.
                 self.paused = !focused;
+                
                 self.graphics.as_mut().unwrap().inputs_commanded.free_look = false;
                 if focused {
                     self.last_render_time = Instant::now();
@@ -257,6 +257,7 @@ where
 
             }
             WindowEvent::CursorEntered { device_id: _} => {
+                self.paused = false;
                 graphics.inputs_commanded.cursor_out_of_window = false;
             }
             // This is required to prevent the application from freezing after dropping a file.

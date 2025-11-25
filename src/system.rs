@@ -65,6 +65,7 @@ where
     pub scene: Scene,
     pub last_render_time: Instant,
     pub dt: Duration,
+    /// Minimized, etc. Indicates not to redraw.
     pub paused: bool
 }
 
