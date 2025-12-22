@@ -33,7 +33,7 @@ pub struct InputsCommanded {
     pub panning: bool, // todo: Implement A/R
     // todo: Move this A/R. Currently use it e.g. to disable scrolling moving if cursor
     // todo is not in window,
-    pub cursor_out_of_window: bool
+    pub cursor_out_of_window: bool,
 }
 
 impl InputsCommanded {

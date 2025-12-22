@@ -18,7 +18,8 @@ pub const VEC3_UNIFORM_SIZE: usize = 4 * F32_SIZE;
 pub const MAT4_SIZE: usize = 16 * F32_SIZE;
 pub const MAT3_SIZE: usize = 9 * F32_SIZE;
 
-pub const VERTEX_SIZE: usize = 14 * F32_SIZE;
+pub const VERTEX_SIZE: usize = 14 * F32_SIZE + 4; // todo last 4 are per-vertex color
+
 // Note that position, orientation, and scale are combined into a single 4x4 transformation
 // matrix. Note that unlike uniforms, we don't need alignment padding, and can use Vec3 directly.
 pub const INSTANCE_SIZE: usize = MAT4_SIZE + MAT3_SIZE + VEC4_SIZE + F32_SIZE;
@@ -60,6 +61,17 @@ pub(crate) const VERTEX_LAYOUT: VertexBufferLayout<'static> = VertexBufferLayout
             shader_location: 4,
             format: VertexFormat::Float32x3,
         },
+        // Color (per-vertex) todo: Experimenting
+        // VertexAttribute {
+        //     offset: (2 * F32_SIZE + 4 * VEC3_SIZE) as wgpu::BufferAddress,
+        //     shader_location: 5,
+        //     format: VertexFormat::Float32x4,
+        // },
+        VertexAttribute {
+            offset: (2 * F32_SIZE + 4 * VEC3_SIZE) as wgpu::BufferAddress, // 56
+            shader_location: 5,
+            format: VertexFormat::Unorm8x4,
+        },
     ],
 };
 
@@ -81,55 +93,55 @@ pub(crate) const INSTANCE_LAYOUT: VertexBufferLayout<'static> = VertexBufferLayo
         // Model matrix, col 0
         VertexAttribute {
             offset: 0,
-            shader_location: 5,
+            shader_location: 6,
             format: VertexFormat::Float32x4,
         },
         // Model matrix, col 1
         VertexAttribute {
             offset: (F32_SIZE * 4) as wgpu::BufferAddress,
-            shader_location: 6,
+            shader_location: 7,
             format: VertexFormat::Float32x4,
         },
         // Model matrix, col 2
         VertexAttribute {
             offset: (F32_SIZE * 8) as wgpu::BufferAddress,
-            shader_location: 7,
+            shader_location: 8,
             format: VertexFormat::Float32x4,
         },
         // Model matrix, col 3
         VertexAttribute {
             offset: (F32_SIZE * 12) as wgpu::BufferAddress,
-            shader_location: 8,
+            shader_location: 9,
             format: VertexFormat::Float32x4,
         },
         // Normal matrix, col 0
         VertexAttribute {
             offset: (MAT4_SIZE) as wgpu::BufferAddress,
-            shader_location: 9,
+            shader_location: 10,
             format: VertexFormat::Float32x3,
         },
         // Normal matrix, col 1
         VertexAttribute {
             offset: (MAT4_SIZE + VEC3_SIZE) as wgpu::BufferAddress,
-            shader_location: 10,
+            shader_location: 11,
             format: VertexFormat::Float32x3,
         },
         // Normal matrix, col 2
         VertexAttribute {
             offset: (MAT4_SIZE + VEC3_SIZE * 2) as wgpu::BufferAddress,
-            shader_location: 11,
+            shader_location: 12,
             format: VertexFormat::Float32x3,
         },
         // model (and vertex) color
         VertexAttribute {
             offset: (MAT4_SIZE + MAT3_SIZE) as wgpu::BufferAddress,
-            shader_location: 12,
+            shader_location: 13,
             format: VertexFormat::Float32x4,
         },
         // Shinyness
         VertexAttribute {
             offset: (MAT4_SIZE + MAT3_SIZE + VEC4_SIZE) as wgpu::BufferAddress,
-            shader_location: 13,
+            shader_location: 14,
             format: VertexFormat::Float32,
         },
     ],
@@ -155,6 +167,8 @@ pub struct Vertex {
     /// Tangent which is a unit vector perpendicular to both vectors at a given point.
     /// This is used to orient normal maps; corresponds to the +Y texture direction.
     pub bitangent: Vec3,
+    /// For per-vertex coloring. If opacity is 0, the entity color will be used instead.
+    pub color: Option<(u8, u8, u8, u8)>,
 }
 
 impl Vertex {
@@ -166,6 +180,7 @@ impl Vertex {
             normal,
             tangent: Vec3::new_zero(),
             bitangent: Vec3::new_zero(),
+            color: None,
         }
     }
 
@@ -181,6 +196,10 @@ impl Vertex {
         result[20..32].clone_from_slice(&self.normal.to_bytes());
         result[32..44].clone_from_slice(&self.tangent.to_bytes());
         result[44..56].clone_from_slice(&self.bitangent.to_bytes());
+
+        if let Some(color) = self.color {
+            result[56..60].copy_from_slice(&[color.0, color.1, color.2, color.3]);
+        }
 
         result
     }
@@ -222,6 +241,7 @@ impl Instance {
         color_buf[3 * F32_SIZE..4 * F32_SIZE].clone_from_slice(&self.opacity.to_ne_bytes());
 
         result[MAT4_SIZE + MAT3_SIZE..INSTANCE_SIZE - F32_SIZE].clone_from_slice(&color_buf);
+
         // todo
         // result[MAT4_SIZE + MAT3_SIZE..INSTANCE_SIZE - F32_SIZE]
         //     // .clone_from_slice(&self.color.to_bytes_uniform());
@@ -275,10 +295,12 @@ pub struct Entity {
     /// Rotation, relative to up.
     pub orientation: Quaternion,
     pub scale: f32, // 1.0 is original.
-    /// Scale by  axis. If `Some`, overrides scale.
+    /// Scale by axis. If `Some`, overrides scale.
     /// Not set in the constructor; set after manually.
     pub scale_partial: Option<Vec3>,
     pub color: (f32, f32, f32),
+    // /// If present, this overrides `color`.
+    // pub color_by_vertex: Option<(u8, u8, u8)>,
     pub opacity: f32,
     pub shinyness: f32, // 0 to 1.
     // todo: Experimenting. Public so we can override defaults in applications,
@@ -303,6 +325,7 @@ impl Default for Entity {
             scale: 1.,
             scale_partial: None,
             color: (1., 1., 1.),
+            // color_by_vertex: None,
             opacity: 1.,
             shinyness: 0.,
             buf_i: None,

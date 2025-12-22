@@ -44,19 +44,22 @@ struct VertexIn {
     @location(2) normal: vec3<f32>,
     @location(3) tangent: vec3<f32>,
     @location(4) bitangent: vec3<f32>,
+    @location(5) color: vec4<f32>, // from Unorm8x4 -> converted to 0..1
 }
 
 // These are matrix columns; we can't pass matrices directly for vertex attributes.
 struct InstanceIn {
-    @location(5) model_matrix_0: vec4<f32>,
-    @location(6) model_matrix_1: vec4<f32>,
-    @location(7) model_matrix_2: vec4<f32>,
-    @location(8) model_matrix_3: vec4<f32>,
-    @location(9) normal_matrix_0: vec3<f32>,
-    @location(10) normal_matrix_1: vec3<f32>,
-    @location(11) normal_matrix_2: vec3<f32>,
-    @location(12) color: vec4<f32>, // Len 4; includes alpha.
-    @location(13) shinyness: f32,
+    @location(6) model_matrix_0: vec4<f32>,
+    @location(7) model_matrix_1: vec4<f32>,
+    @location(8) model_matrix_2: vec4<f32>,
+    @location(9) model_matrix_3: vec4<f32>,
+
+    @location(10) normal_matrix_0: vec3<f32>,
+    @location(11) normal_matrix_1: vec3<f32>,
+    @location(12) normal_matrix_2: vec3<f32>,
+
+    @location(13) color: vec4<f32>, // entity color + opacity.
+    @location(14) shinyness: f32,
 }
 
 struct VertexOut {
@@ -65,7 +68,8 @@ struct VertexOut {
     @location(1) normal: vec3<f32>,
     @location(2) color: vec4<f32>,
     @location(3) shinyness: f32,
-    @location(4) world_posit: vec3<f32>, // todo: Experimenting
+    @location(4) world_posit: vec3<f32>,
+
 //        @location(1) tangent_position: vec3<f32>,
 //        @location(2) tangent_light_position: vec3<f32>,
 //        @location(3) tangent_view_position: vec3<f32>,
@@ -106,15 +110,15 @@ fn vs_main(
     // We use the tangent matrix, and tangent out values for normal mapping.
     // This is currently unimplemented.
     var world_normal = normalize(normal_mat * vertex_in.normal);
-    var world_tangent = normalize(normal_mat * vertex_in.tangent);
-    var world_bitangent = normalize(normal_mat * vertex_in.bitangent);
+//    var world_tangent = normalize(normal_mat * vertex_in.tangent);
+//    var world_bitangent = normalize(normal_mat * vertex_in.bitangent);
 
-// Construct the tangent matrix
-    var tangent_mat = transpose(mat3x3<f32>(
-        world_tangent,
-        world_bitangent,
-        world_normal,
-    ));
+    // Construct the tangent matrix
+//    var tangent_mat = transpose(mat3x3<f32>(
+//        world_tangent,
+//        world_bitangent,
+//        world_normal,
+//    ));
 
     // Pad the model position with 1., for use with the 4x4 transform mats.
     var world_posit = model_mat * vec4<f32>(vertex_in.position, 1.0);
@@ -128,7 +132,12 @@ fn vs_main(
 //    result.tangent_light_position = tangent_matrix * light.position;
     result.normal = world_normal;
 
-    result.color = instance.color;
+    if (vertex_in.color.a == 0.0) {
+        result.color = instance.color;
+    } else {
+        result.color = vertex_in.color;
+    }
+
     result.shinyness = instance.shinyness;
     result.world_posit = world_posit.xyz;
 

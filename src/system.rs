@@ -66,7 +66,7 @@ where
     pub last_render_time: Instant,
     pub dt: Duration,
     /// Minimized, etc. Indicates not to redraw.
-    pub paused: bool
+    pub paused: bool,
 }
 
 impl<T: 'static, FRender, FEventDev, FEventWin, FGui> State<T, FRender, FEventDev, FEventWin, FGui>

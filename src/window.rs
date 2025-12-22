@@ -1,7 +1,10 @@
 //! Handles window initialization and events, using Winit.
 
-use std::{path::Path, time::Instant};
-use std::time::Duration;
+use std::{
+    path::Path,
+    time::{Duration, Instant},
+};
+
 use image::ImageError;
 use wgpu::TextureViewDescriptor;
 use winit::{
@@ -243,7 +246,7 @@ where
             WindowEvent::Focused(focused) => {
                 // Eg clicking the tile bar icon.
                 self.paused = !focused;
-                
+
                 self.graphics.as_mut().unwrap().inputs_commanded.free_look = false;
                 if focused {
                     self.last_render_time = Instant::now();
@@ -254,9 +257,8 @@ where
                 // When the cursor moves out of the window, stop mouse-looking.
                 graphics.inputs_commanded.free_look = false;
                 graphics.inputs_commanded.cursor_out_of_window = true;
-
             }
-            WindowEvent::CursorEntered { device_id: _} => {
+            WindowEvent::CursorEntered { device_id: _ } => {
                 self.paused = false;
                 graphics.inputs_commanded.cursor_out_of_window = false;
             }

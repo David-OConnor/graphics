@@ -417,6 +417,7 @@ impl GraphicsState {
                 indices.push(index);
             }
         }
+
         // Convert the vertex and index data to u8 buffers.
         let mut vertex_data = Vec::new();
         for vertex in vertices {
@@ -513,7 +514,8 @@ impl GraphicsState {
         }
 
         if needs_full_rebuild {
-            println!("Performing a full entity rebuild; unable to update in-place");
+            // todo: Put back A/R to help diagnose problems.
+            // println!("Performing a full entity rebuild; unable to update in-place");
             self.setup_entities(device);
         }
     }

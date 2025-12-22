@@ -228,6 +228,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 fn draw_entities(entities: &mut Vec<Entity>, snapshots: &[Snapshot]) {
     *entities = Vec::new();
     
+    // Note: If you associate a color with a `Vertex` in a `Mesh`, that will override 
+    // entity color.
+    
     // Alternate way to construct: use its `Default` impl, overriding fields as required.
     entities.push(Entity::new(
         // manually set the `scale_partial` field with a `Vec3` if using non-uniform scaling. 
