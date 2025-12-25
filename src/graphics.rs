@@ -620,35 +620,14 @@ impl GraphicsState {
 
     fn setup_render_pass<'a>(
         &mut self,
-        ui_size: f32,
+        // ui_size: (f32, f32),
         encoder: &'a mut CommandEncoder,
         output_view: &TextureView,
         width: u32,
         height: u32,
-        ui_settings: &UiSettings,
+        // ui_settings: &UiSettings,
     ) -> RenderPass<'a> {
-        // Adjust the viewport size for 3D, based on how much size the UI is taking up.
-        let (mut x, mut y, mut eff_width, mut eff_height) = match ui_settings.layout {
-            UiLayout::Left => (ui_size, 0., width as f32 - ui_size, height as f32),
-            UiLayout::Right => (0., 0., width as f32 - ui_size, height as f32),
-            UiLayout::Top => (0., ui_size, width as f32, height as f32 - ui_size),
-            UiLayout::Bottom => (0., 0., width as f32, height as f32 - ui_size),
-        };
-
-        // This has come up during EGUI file_dialog. Causes the render to effectively overlap
-        // the UI, instead of being next to it.
-        match ui_settings.layout {
-            UiLayout::Left | UiLayout::Right => {
-                if ui_size > width as f32 {
-                    (x, y, eff_width, eff_height) = (0., 0., width as f32, height as f32);
-                }
-            }
-            _ => {
-                if ui_size >= height as f32 {
-                    (x, y, eff_width, eff_height) = (0., 0., width as f32, height as f32);
-                }
-            }
-        }
+        let (x, y, eff_width, eff_height) = (0., 0., width as f32, height as f32);
 
         let color_attachment = if let Some(msaa_texture) = &self.msaa_texture {
             // Use MSAA texture as render target, resolve to the swap chain texture
@@ -845,12 +824,12 @@ impl GraphicsState {
         process_engine_updates(&updates_gui, self, device, queue);
 
         let rpass = self.setup_render_pass(
-            gui.size,
+            // gui.size,
             &mut encoder,
             output_texture,
             width,
             height,
-            ui_settings,
+            // ui_settings,
         );
 
         let mut rpass = rpass.forget_lifetime();

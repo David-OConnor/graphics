@@ -18,7 +18,7 @@ pub const VEC3_UNIFORM_SIZE: usize = 4 * F32_SIZE;
 pub const MAT4_SIZE: usize = 16 * F32_SIZE;
 pub const MAT3_SIZE: usize = 9 * F32_SIZE;
 
-pub const VERTEX_SIZE: usize = 14 * F32_SIZE + 4; // todo last 4 are per-vertex color
+pub const VERTEX_SIZE: usize = 14 * F32_SIZE + 4; // ast 4 are per-vertex color
 
 // Note that position, orientation, and scale are combined into a single 4x4 transformation
 // matrix. Note that unlike uniforms, we don't need alignment padding, and can use Vec3 directly.
@@ -61,14 +61,9 @@ pub(crate) const VERTEX_LAYOUT: VertexBufferLayout<'static> = VertexBufferLayout
             shader_location: 4,
             format: VertexFormat::Float32x3,
         },
-        // Color (per-vertex) todo: Experimenting
-        // VertexAttribute {
-        //     offset: (2 * F32_SIZE + 4 * VEC3_SIZE) as wgpu::BufferAddress,
-        //     shader_location: 5,
-        //     format: VertexFormat::Float32x4,
-        // },
+        // Per-vertex color.
         VertexAttribute {
-            offset: (2 * F32_SIZE + 4 * VEC3_SIZE) as wgpu::BufferAddress, // 56
+            offset: (2 * F32_SIZE + 4 * VEC3_SIZE) as wgpu::BufferAddress,
             shader_location: 5,
             format: VertexFormat::Unorm8x4,
         },
@@ -208,7 +203,6 @@ impl Vertex {
 /// Instances allow the GPU to render the same object multiple times.
 /// "Instancing allows us to draw the same object multiple times with different properties
 /// (position, orientation, size, color, etc.). "
-/// todo: Relationship between this and entity?
 pub struct Instance {
     pub position: Vec3,
     pub orientation: Quaternion,
@@ -530,4 +524,8 @@ pub struct EngineUpdates {
     pub entities: EntityUpdate,
     pub camera: bool,
     pub lighting: bool,
+    /// X, Y. Reported by the UI, e.g. from SidePanel.response.rect.width()
+    /// and TopBottomPanel.response.rect.heigh() etc.
+    pub ui_reserved_px: (f32, f32),
+    // pub ui_scene_rect: Option<egui::Rect>,
 }

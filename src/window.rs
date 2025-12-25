@@ -87,7 +87,6 @@ where
                     sys.surface_cfg.width,
                     sys.surface_cfg.height,
                     &mut self.ui_settings,
-                    // &self.scene.input_settings,
                     &mut self.gui_handler,
                     &mut self.user_state,
                     layout,
@@ -182,15 +181,20 @@ where
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let mouse_in_gui = match self.ui_settings.layout {
-                    UiLayout::Left => position.x < gui.size as f64,
-                    UiLayout::Right => {
-                        position.x > window.inner_size().width as f64 - gui.size as f64
+                    UiLayout::Left => {
+                        position.x < gui.size.0 as f64 || position.y < gui.size.1 as f64
                     }
-                    UiLayout::Top => position.y < gui.size as f64,
+                    UiLayout::Right => {
+                        position.x > window.inner_size().width as f64 - gui.size.0 as f64
+                    }
+                    UiLayout::Top => {
+                        position.x < gui.size.0 as f64 || position.y < gui.size.1 as f64
+                    }
                     UiLayout::Bottom => {
-                        position.y > window.inner_size().height as f64 - gui.size as f64
+                        position.y > window.inner_size().height as f64 - gui.size.1 as f64
                     }
                 };
+
                 if mouse_in_gui {
                     gui.mouse_in_gui = true;
 

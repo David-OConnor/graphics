@@ -23,7 +23,8 @@ pub(crate) struct GuiState {
     /// Used to disable inputs while the mouse is in the GUI section.
     pub mouse_in_gui: bool,
     /// We store this, so we know if we need to perform a resize if it changes.
-    pub size: f32,
+    /// (X, Y)
+    pub size: (f32, f32),
 }
 
 impl GuiState {
@@ -58,7 +59,7 @@ impl GuiState {
             egui_state,
             egui_renderer,
             mouse_in_gui: false,
-            size: 0.,
+            size: (0., 0.),
         }
     }
 
@@ -88,20 +89,32 @@ impl GuiState {
         let mut resize_required = false;
 
         let raw_input = self.egui_state.take_egui_input(&graphics.window);
+
+        // let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
+        //     *updates_gui = gui_handler(user_state, ctx, &mut graphics.scene);
+        //
+        //     let mut new_size = match layout {
+        //         UiLayout::Left | UiLayout::Right => ctx.used_size().x,
+        //         _ => ctx.used_size().y,
+        //     };
+        //     // todo: How to fix this? Here or in applications?
+        //     // } * ctx.pixels_per_point();
+        //
+        //     // This error doesn't make much sense, but seems to occur when there is no GUI.
+        //     if new_size == f32::NEG_INFINITY {
+        //         new_size = 0.;
+        //     }
+        //
+        //     if self.size != new_size {
+        //         resize_required = true;
+        //         self.size = new_size;
+        //     }
+        // });
+        // todo: Experimenting
         let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
-            *updates_gui = gui_handler(user_state, self.egui_state.egui_ctx(), &mut graphics.scene);
+            *updates_gui = gui_handler(user_state, ctx, &mut graphics.scene);
 
-            let mut new_size = match layout {
-                UiLayout::Left | UiLayout::Right => ctx.used_size().x,
-                _ => ctx.used_size().y,
-            };
-            // todo: How to fix this? Here or in applications?
-            // } * ctx.pixels_per_point();
-
-            // This error doesn't make much sense, but seems to occur when there is no GUI.
-            if new_size == f32::NEG_INFINITY {
-                new_size = 0.;
-            }
+            let new_size = updates_gui.ui_reserved_px;
 
             if self.size != new_size {
                 resize_required = true;

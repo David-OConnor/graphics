@@ -197,16 +197,21 @@ where
             sys.surface_cfg.height = new_size.height;
             sys.surface.configure(&sys.device, &sys.surface_cfg);
 
-            let (eff_width, eff_height) = match self.ui_settings.layout {
-                UiLayout::Left | UiLayout::Right => (
-                    sys.surface_cfg.width as f32 - gui.size,
-                    sys.surface_cfg.height as f32,
-                ),
-                _ => (
-                    sys.surface_cfg.width as f32,
-                    sys.surface_cfg.height as f32 - gui.size,
-                ),
-            };
+            // let (eff_width, eff_height) = match self.ui_settings.layout {
+            //     UiLayout::Left | UiLayout::Right => (
+            //         sys.surface_cfg.width as f32 - gui.size.0,
+            //         sys.surface_cfg.height as f32 - gui.size.1,
+            //     ),
+            //     _ => (
+            //         sys.surface_cfg.width as f32 - gui.size.0,
+            //         sys.surface_cfg.height as f32 - gui.size.1,
+            //     ),
+            // };
+
+            let (eff_width, eff_height) = (
+                sys.surface_cfg.width as f32 - gui.size.0,
+                sys.surface_cfg.height as f32 - gui.size.1,
+            );
 
             graphics.scene.camera.aspect = eff_width / eff_height;
             graphics.scene.window_size = (new_size.width as f32, new_size.height as f32);
@@ -293,22 +298,16 @@ async fn setup_async(instance: &Instance, surface: &Surface<'static>) -> (Adapte
         .unwrap();
 
     let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                // https://docs.rs/wgpu/latest/wgpu/struct.Features.html
-                required_features: Features::empty(),
-                // https://docs.rs/wgpu/latest/wgpu/struct.Limits.html
-                required_limits: Default::default(),
-                memory_hints: Default::default(),
-                trace: wgpu::Trace::Off,
-                experimental_features: ExperimentalFeatures::disabled(),
-            },
-            // std::env::var("WGPU_TRACE")
-            //     .ok()
-            //     .as_ref()
-            //     .map(std::path::Path::new),
-        )
+        .request_device(&wgpu::DeviceDescriptor {
+            label: None,
+            // https://docs.rs/wgpu/latest/wgpu/struct.Features.html
+            required_features: Features::empty(),
+            // https://docs.rs/wgpu/latest/wgpu/struct.Limits.html
+            required_limits: Default::default(),
+            memory_hints: Default::default(),
+            trace: wgpu::Trace::Off,
+            experimental_features: ExperimentalFeatures::disabled(),
+        })
         .await
         .expect("Unable to find a suitable GPU adapter. :(");
 

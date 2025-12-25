@@ -67,7 +67,7 @@ impl GraphicsState {
     /// We use this for the text overlay
     fn viewport_rect(
         &self,
-        ui_size: f32, // In EGUI units.
+        ui_size: (f32, f32), // In EGUI units.
         // These are in physical pixels.
         width: u32,
         height: u32,
@@ -80,20 +80,20 @@ impl GraphicsState {
 
         // Same logic as setup_render_pass; keep them in sync.
         let (mut x, mut y, mut eff_width, mut eff_height) = match ui_settings.layout {
-            UiLayout::Left => (ui_size, 0., w - ui_size, h),
-            UiLayout::Right => (0., 0., w - ui_size, h),
-            UiLayout::Top => (0., ui_size, w, h - ui_size),
-            UiLayout::Bottom => (0., 0., w, h - ui_size),
+            UiLayout::Left => (ui_size.0, 0., w - ui_size.0, h),
+            UiLayout::Right => (0., 0., w - ui_size.0, h),
+            UiLayout::Top => (0., ui_size.1, w, h - ui_size.1),
+            UiLayout::Bottom => (0., 0., w, h - ui_size.1),
         };
 
         match ui_settings.layout {
             UiLayout::Left | UiLayout::Right => {
-                if ui_size > w {
+                if ui_size.0 > w {
                     (x, y, eff_width, eff_height) = (0., 0., w, h);
                 }
             }
             _ => {
-                if ui_size >= h {
+                if ui_size.1 >= h {
                     (x, y, eff_width, eff_height) = (0., 0., w, h);
                 }
             }
@@ -111,7 +111,7 @@ impl GraphicsState {
         width: u32,
         height: u32,
         ui_settings: &UiSettings,
-        ui_size: f32,
+        ui_size: (f32, f32),
         pixels_per_pt: f32,
     ) -> Option<Pos2> {
         let (vx, vy, vw, vh) =
@@ -136,7 +136,7 @@ impl GraphicsState {
         width: u32,
         height: u32,
         ui_settings: &UiSettings,
-        ui_size: f32,
+        ui_size: (f32, f32),
         pixels_per_pt: f32,
     ) -> Vec<(Pos2, &TextOverlay)> {
         let mut out = Vec::new();
