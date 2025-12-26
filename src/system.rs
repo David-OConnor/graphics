@@ -189,7 +189,6 @@ where
 
         let sys = self.render.as_mut().unwrap();
         let graphics = self.graphics.as_mut().unwrap();
-        let gui = self.gui.as_mut().unwrap();
 
         if new_size.width > 0 && new_size.height > 0 {
             sys.size = new_size;
@@ -197,21 +196,8 @@ where
             sys.surface_cfg.height = new_size.height;
             sys.surface.configure(&sys.device, &sys.surface_cfg);
 
-            // let (eff_width, eff_height) = match self.ui_settings.layout {
-            //     UiLayout::Left | UiLayout::Right => (
-            //         sys.surface_cfg.width as f32 - gui.size.0,
-            //         sys.surface_cfg.height as f32 - gui.size.1,
-            //     ),
-            //     _ => (
-            //         sys.surface_cfg.width as f32 - gui.size.0,
-            //         sys.surface_cfg.height as f32 - gui.size.1,
-            //     ),
-            // };
-
-            let (eff_width, eff_height) = (
-                sys.surface_cfg.width as f32 - gui.size.0,
-                sys.surface_cfg.height as f32 - gui.size.1,
-            );
+            let (eff_width, eff_height) =
+                (sys.surface_cfg.width as f32, sys.surface_cfg.height as f32);
 
             graphics.scene.camera.aspect = eff_width / eff_height;
             graphics.scene.window_size = (new_size.width as f32, new_size.height as f32);
