@@ -35,7 +35,7 @@ pub use system::run;
 pub use text_overlay::TextOverlay;
 pub use types::{
     ControlScheme, EngineUpdates, Entity, GraphicsSettings, InputSettings, Mesh, Scene,
-    ScrollBehavior, UiLayout, UiSettings, Vertex,
+    ScrollBehavior, UiLayoutSides, UiLayoutTopBottom, UiSettings, Vertex,
 };
 // Re-export winit DeviceEvents for use in the API; this prevents the calling
 // lib from needing to use winit as a dependency directly.

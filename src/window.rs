@@ -15,7 +15,7 @@ use winit::{
 };
 
 use crate::{
-    EngineUpdates, Scene, UiLayout,
+    EngineUpdates, Scene, UiLayoutSides, UiLayoutTopBottom,
     system::{State, process_engine_updates},
 };
 
@@ -75,8 +75,6 @@ where
                     .texture
                     .create_view(&TextureViewDescriptor::default());
 
-                let layout = self.ui_settings.layout;
-
                 let resize_required = graphics.render(
                     self.gui.as_mut().unwrap(),
                     output_frame,
@@ -89,7 +87,6 @@ where
                     &mut self.ui_settings,
                     &mut self.gui_handler,
                     &mut self.user_state,
-                    layout,
                 );
 
                 if resize_required {
@@ -161,13 +158,6 @@ where
             process_engine_updates(&updates_event, graphics, &render.device, &render.queue);
         }
 
-        //     if let Some(gui) = self.gui.as_mut() {
-        //     if let Some(graphics) = self.graphics.as_mut() {
-        //         let window = &graphics.window;
-        //         let _ = gui.egui_state.on_window_event(window, &event);
-        //     }
-        // }
-
         let window = &graphics.window;
         let _ = gui.egui_state.on_window_event(window, &event);
 
@@ -180,20 +170,20 @@ where
                 self.graphics.as_ref().unwrap().window.request_redraw();
             }
             WindowEvent::CursorMoved { position, .. } => {
-                let mouse_in_gui = match self.ui_settings.layout {
-                    UiLayout::Left => {
-                        position.x < gui.size.0 as f64 || position.y < gui.size.1 as f64
-                    }
-                    UiLayout::Right => {
+                let in_ui_horizontal = match self.ui_settings.layout_sides {
+                    UiLayoutSides::Left => position.x < gui.size.0 as f64,
+                    UiLayoutSides::Right => {
                         position.x > window.inner_size().width as f64 - gui.size.0 as f64
                     }
-                    UiLayout::Top => {
-                        position.x < gui.size.0 as f64 || position.y < gui.size.1 as f64
-                    }
-                    UiLayout::Bottom => {
+                };
+
+                let in_ui_vertical = match self.ui_settings.layout_top_bottom {
+                    UiLayoutTopBottom::Top => position.y < gui.size.1 as f64,
+                    UiLayoutTopBottom::Bottom => {
                         position.y > window.inner_size().height as f64 - gui.size.1 as f64
                     }
                 };
+                let mouse_in_gui = in_ui_horizontal || in_ui_vertical;
 
                 if mouse_in_gui {
                     gui.mouse_in_gui = true;

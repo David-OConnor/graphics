@@ -486,10 +486,14 @@ impl Default for GraphicsSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum UiLayout {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum UiLayoutSides {
     Left,
     Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum UiLayoutTopBottom {
     Top,
     Bottom,
 }
@@ -497,14 +501,17 @@ pub enum UiLayout {
 #[derive(Clone, Debug)]
 /// GUI settings
 pub struct UiSettings {
-    pub layout: UiLayout,
+    // todo: Currently this only supports one of each ui; can't have both left and right for example.
+    pub layout_sides: UiLayoutSides,
+    pub layout_top_bottom: UiLayoutTopBottom,
     pub icon_path: Option<String>,
 }
 
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            layout: UiLayout::Left,
+            layout_sides: UiLayoutSides::Left,
+            layout_top_bottom: UiLayoutTopBottom::Top,
             icon_path: None,
         }
     }

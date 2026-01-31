@@ -1,6 +1,6 @@
 [package]
 name = "graphics"
-version = "0.5.6"
+version = "0.5.7"
 authors = ["David O'Connor <the_alchemist@fastmail.com>"]
 description = "A 3D rendering engine for rust programs, with GUI integration"
 edition = "2024"
@@ -17,7 +17,7 @@ license = "MIT"
 
 
 [dependencies]
-lin_alg = { version = "1.1.8", features = ["computer_graphics"] }
+lin_alg = { version = "1.3.14", features = ["computer_graphics"] }
 
 # 3D and graphics libraries. There is a degree of interdependence between them.
 wgpu = "27.0.1"
@@ -33,7 +33,7 @@ bincode = { version = "2.0.1", optional = true } # For our save/load util.
 
 
 [patch.crates-io]
-lin_alg = { path = "../lin_alg" }
+#lin_alg = { path = "../lin_alg" }
 
 
 [features]

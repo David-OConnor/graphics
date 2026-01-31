@@ -25,7 +25,7 @@ use crate::{
     graphics::GraphicsState,
     gui::GuiState,
     texture::Texture,
-    types::{EngineUpdates, GraphicsSettings, Scene, UiLayout, UiSettings},
+    types::{EngineUpdates, GraphicsSettings, Scene, UiSettings},
 };
 
 pub const COLOR_FORMAT: TextureFormat = TextureFormat::Bgra8UnormSrgb;
@@ -35,7 +35,7 @@ pub const DEPTH_FORMAT: TextureFormat = TextureFormat::Depth32Float;
 /// that are required by  the WGPU renderer.
 pub(crate) struct RenderState {
     pub size: PhysicalSize<u32>,
-    pub surface: Surface<'static>, // Sshare the same lifetime as the window, A/R.
+    pub surface: Surface<'static>, // Share the same lifetime as the window, A/R.
     // pub adapter: Adapter,
     pub device: Device,
     pub queue: Queue,

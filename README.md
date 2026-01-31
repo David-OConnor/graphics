@@ -39,7 +39,7 @@ use std::f32::consts::TAU;
 
 use graphics::{
     Camera, ControlScheme, DeviceEvent, EngineUpdates, Entity, InputSettings, LightType, Lighting,
-    Mesh, PointLight, Scene, UiLayout, UiSettings, GraphicsSettings, RIGHT_VEC, UP_VEC
+    Mesh, PointLight, Scene, UiLayoutSides, UiLayoutTopBottom, UiSettings, GraphicsSettings, RIGHT_VEC, UP_VEC
 };
 use egui::{Context, Slider, TopBottomPanel};
 
@@ -293,7 +293,8 @@ pub fn render(state: State) {
     };
 
     let ui_settings = UiSettings {
-        layout: UiLayout::Top,
+        layout_sides: UiLayoutSides::Left,
+        layout_top_bottom: UiLayoutTopBottom::Top,
         icon_path: Some("./resources/icon.png".to_owned()),
     };
 

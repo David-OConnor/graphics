@@ -10,7 +10,6 @@ use wgpu::{self, CommandEncoder, Device, Queue, TextureFormat};
 use winit::window::Window;
 
 use crate::{
-    UiLayout,
     graphics::GraphicsState,
     system::DEPTH_FORMAT,
     types::{EngineUpdates, Scene},
@@ -75,7 +74,6 @@ impl GuiState {
         width: u32,
         height: u32,
         updates_gui: &mut EngineUpdates,
-        layout: UiLayout,
     ) -> (FullOutput, Vec<ClippedPrimitive>, ScreenDescriptor, bool) {
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [width, height],

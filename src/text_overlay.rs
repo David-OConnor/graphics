@@ -3,7 +3,7 @@
 use egui::{Align2, Color32, FontFamily, FontId, Pos2};
 use lin_alg::f32::Vec3;
 
-use crate::{UiLayout, UiSettings, graphics::GraphicsState, gui::GuiState};
+use crate::{UiSettings, graphics::GraphicsState, gui::GuiState};
 
 #[derive(Debug, Clone)]
 pub struct TextOverlay {
@@ -64,43 +64,6 @@ pub(crate) fn draw_text_overlay(
 }
 
 impl GraphicsState {
-    /// We use this for the text overlay
-    fn viewport_rect(
-        &self,
-        ui_size: (f32, f32), // In EGUI units.
-        // These are in physical pixels.
-        width: u32,
-        height: u32,
-        ui_settings: &UiSettings,
-        pixels_per_pt: f32,
-    ) -> (f32, f32, f32, f32) {
-        // Convert from physical pixels to EGUI points.
-        let w = width as f32 / pixels_per_pt;
-        let h = height as f32 / pixels_per_pt;
-
-        // Same logic as setup_render_pass; keep them in sync.
-        let (mut x, mut y, mut eff_width, mut eff_height) = match ui_settings.layout {
-            UiLayout::Left => (ui_size.0, 0., w - ui_size.0, h),
-            UiLayout::Right => (0., 0., w - ui_size.0, h),
-            UiLayout::Top => (0., ui_size.1, w, h - ui_size.1),
-            UiLayout::Bottom => (0., 0., w, h - ui_size.1),
-        };
-
-        match ui_settings.layout {
-            UiLayout::Left | UiLayout::Right => {
-                if ui_size.0 > w {
-                    (x, y, eff_width, eff_height) = (0., 0., w, h);
-                }
-            }
-            _ => {
-                if ui_size.1 >= h {
-                    (x, y, eff_width, eff_height) = (0., 0., w, h);
-                }
-            }
-        }
-        (x, y, eff_width, eff_height)
-    }
-
     /// We use this for the text overlay.
     /// Project a world-space point to screen-space (in egui points).
     /// Returns None if behind camera or outside clip space.

@@ -123,25 +123,25 @@ pub(crate) const GAUSS_INST_LAYOUT: VertexBufferLayout<'static> = VertexBufferLa
     array_stride: size_of::<GaussianInstance>() as wgpu::BufferAddress, // 48 bytes
     step_mode: VertexStepMode::Instance,
     attributes: &[
-        // center.xyz  → @location(1)
+        // Center.xyz:  @location(1)
         VertexAttribute {
             offset: 0,
             shader_location: 1,
             format: VertexFormat::Float32x3,
         },
-        // amplitude    → @location(2)
+        // Amplitude: @location(2)
         VertexAttribute {
             offset: 12,
             shader_location: 2,
             format: VertexFormat::Float32,
         },
-        // width        → @location(3)
+        // Width: @location(3)
         VertexAttribute {
             offset: 16,
             shader_location: 3,
             format: VertexFormat::Float32,
         },
-        // color, @location(4)
+        // Color: @location(4)
         VertexAttribute {
             offset: 20,
             shader_location: 4,

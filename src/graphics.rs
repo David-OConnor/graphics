@@ -27,6 +27,7 @@ use wgpu::{
 use winit::{event::DeviceEvent, window::Window};
 
 use crate::{
+    UiLayoutSides, UiLayoutTopBottom,
     camera::CAMERA_SIZE,
     gauss::{
         CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, GaussianInstance, QUAD_VERTEX_LAYOUT,
@@ -39,7 +40,7 @@ use crate::{
     texture::Texture,
     types::{
         ControlScheme, EngineUpdates, INSTANCE_LAYOUT, INSTANCE_SIZE, InputSettings, Instance,
-        Scene, UiLayout, UiSettings, VERTEX_LAYOUT,
+        Scene, UiSettings, VERTEX_LAYOUT,
     },
 };
 
@@ -618,16 +619,57 @@ impl GraphicsState {
         queue.write_buffer(&self.lighting_buf, 0, &self.scene.lighting.to_bytes());
     }
 
+    /// We use this for the text overlay
+    /// todo:  Move out of this module.
+    pub fn viewport_rect(
+        &self,
+        ui_size: (f32, f32), // In EGUI units.
+        // These are in physical pixels.
+        win_width: u32,
+        win_height: u32,
+        ui_settings: &UiSettings,
+        _pixels_per_pt: f32,
+    ) -> (f32, f32, f32, f32) {
+        // Default to full window
+        let mut x = 0.0;
+        let mut y = 0.0;
+        let mut eff_width = win_width as f32;
+        let mut eff_height = win_height as f32;
+
+        // Note: This only supports top and left UI; right and bottom is broken.
+        if ui_settings.layout_sides == UiLayoutSides::Left {
+            x = ui_size.0;
+        }
+        if ui_settings.layout_top_bottom == UiLayoutTopBottom::Top {
+            y = ui_size.1;
+        }
+
+        eff_width -= ui_size.0;
+        eff_height -= ui_size.1;
+
+        // Safety check to prevent crash if UI takes entire screen
+        if eff_width < 1.0 {
+            eff_width = 1.0;
+        }
+        if eff_height < 1.0 {
+            eff_height = 1.0;
+        }
+
+        (x, y, eff_width, eff_height)
+    }
+
     fn setup_render_pass<'a>(
         &mut self,
-        // ui_size: (f32, f32),
         encoder: &'a mut CommandEncoder,
         output_view: &TextureView,
-        width: u32,
-        height: u32,
-        // ui_settings: &UiSettings,
+        win_width: u32,
+        win_height: u32,
+        ui_settings: &UiSettings,
+        ui_size: (f32, f32),
+        pixels_per_pt: f32, // todo: Currently unused.
     ) -> RenderPass<'a> {
-        let (x, y, eff_width, eff_height) = (0., 0., width as f32, height as f32);
+        let (x, y, eff_width, eff_height) =
+            self.viewport_rect(ui_size, win_width, win_height, ui_settings, pixels_per_pt);
 
         let color_attachment = if let Some(msaa_texture) = &self.msaa_texture {
             // Use MSAA texture as render target, resolve to the swap chain texture
@@ -737,6 +779,10 @@ impl GraphicsState {
 
             rpass.draw(0..6, 0..self.scene.gaussians.len() as _); // 6 indices for the quad
         }
+
+        // Apply the calculated viewport
+        rpass.set_viewport(x, y, eff_width, eff_height, 0., 1.);
+
         rpass
     }
 
@@ -755,7 +801,6 @@ impl GraphicsState {
         ui_settings: &mut UiSettings,
         gui_handler: impl FnMut(&mut T, &Context, &mut Scene) -> EngineUpdates,
         user_state: &mut T,
-        layout: UiLayout,
     ) -> bool {
         // Adjust camera inputs using the in-engine control scheme.
         // Note that camera settings adjusted by the application code are handled in
@@ -811,7 +856,6 @@ impl GraphicsState {
             width,
             height,
             &mut updates_gui,
-            layout,
         );
 
         // Draw text on the screen.
@@ -824,13 +868,47 @@ impl GraphicsState {
         process_engine_updates(&updates_gui, self, device, queue);
 
         let rpass = self.setup_render_pass(
-            // gui.size,
             &mut encoder,
             output_texture,
             width,
             height,
-            // ui_settings,
+            ui_settings, // Pass settings
+            gui.size,    // Pass current size
+            0.,          // pixels per point. A/R.
         );
+
+        // Update aspect ratio based on the ACTUAL 3D viewport size,
+        // not the window size.
+        // We have to calculate the effective size locally here again, or return it
+        // from setup_render_pass. Calculating it simply here:
+        let mut viewport_w = width as f32;
+        let mut viewport_h = height as f32;
+
+        viewport_w -= gui.size.0;
+        viewport_h -= gui.size.1;
+        //
+        // match ui_settings.layout_sides {
+        //     UiLayoutSides::Left => {
+        //         viewport_w -= gui.size.0;
+        //     }
+        //     UiLayoutSides::Right => {
+        //         viewport_w -= gui.size.0;
+        //     }
+        //     }
+        // }
+        //
+        //
+        // match ui_settings.layout_top_bottom {
+        // UiLayout::Top | crate::types::UiLayout::Bottom => {
+        //         viewport_h -= gui.size.1;
+        //     }
+        // }
+
+        if viewport_w > 0.0 && viewport_h > 0.0 {
+            self.scene.camera.aspect = viewport_w / viewport_h;
+            self.scene.camera.update_proj_mat();
+            self.update_camera(queue);
+        }
 
         let mut rpass = rpass.forget_lifetime();
 
