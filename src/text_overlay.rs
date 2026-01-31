@@ -3,7 +3,7 @@
 use egui::{Align2, Color32, FontFamily, FontId, Pos2};
 use lin_alg::f32::Vec3;
 
-use crate::{UiSettings, graphics::GraphicsState, gui::GuiState};
+use crate::{UiSettings, graphics::GraphicsState, gui::GuiState, viewport_rect};
 
 #[derive(Debug, Clone)]
 pub struct TextOverlay {
@@ -77,8 +77,8 @@ impl GraphicsState {
         ui_size: (f32, f32),
         pixels_per_pt: f32,
     ) -> Option<Pos2> {
-        let (vx, vy, vw, vh) =
-            self.viewport_rect(ui_size, width, height, ui_settings, pixels_per_pt);
+        let (x, y, eff_width, eff_height) =
+            viewport_rect(ui_size, width, height, ui_settings, pixels_per_pt);
 
         let (in_view, ndc) = self.scene.camera.in_view(world);
         if !in_view {
@@ -86,8 +86,8 @@ impl GraphicsState {
         }
 
         // NDC -> pixels in 3D viewport
-        let sx = vx + (ndc.0 * 0.5 + 0.5) * vw;
-        let sy = vy + (1.0 - (ndc.1 * 0.5 + 0.5)) * vh; // flip Y for top-left origin
+        let sx = x + (ndc.0 * 0.5 + 0.5) * eff_width;
+        let sy = y + (1.0 - (ndc.1 * 0.5 + 0.5)) * eff_height; // flip Y for top-left origin
 
         Some(Pos2::new(sx, sy))
     }

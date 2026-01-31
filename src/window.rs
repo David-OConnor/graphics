@@ -15,7 +15,7 @@ use winit::{
 };
 
 use crate::{
-    EngineUpdates, Scene, UiLayoutSides, UiLayoutTopBottom,
+    EngineUpdates, Scene, UiLayoutSides, UiLayoutTopBottom, UiSettings,
     system::{State, process_engine_updates},
 };
 
@@ -301,4 +301,42 @@ where
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {}
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {}
+}
+
+/// Used in render, the text display pipeline, and may be used by applications, e.g. in mapping
+/// 2d to 3d.
+pub fn viewport_rect(
+    ui_size: (f32, f32), // In EGUI units.
+    // These are in physical pixels.
+    win_width: u32,
+    win_height: u32,
+    ui_settings: &UiSettings,
+    _pixels_per_pt: f32,
+) -> (f32, f32, f32, f32) {
+    // Default to full window
+    let mut x = 0.0;
+    let mut y = 0.0;
+    let mut eff_width = win_width as f32;
+    let mut eff_height = win_height as f32;
+
+    // Note: This only supports top and left UI; right and bottom is broken.
+    if ui_settings.layout_sides == UiLayoutSides::Left {
+        x = ui_size.0;
+    }
+    if ui_settings.layout_top_bottom == UiLayoutTopBottom::Top {
+        y = ui_size.1;
+    }
+
+    eff_width -= ui_size.0;
+    eff_height -= ui_size.1;
+
+    // Safety check to prevent crash if UI takes entire screen
+    if eff_width < 1.0 {
+        eff_width = 1.0;
+    }
+    if eff_height < 1.0 {
+        eff_height = 1.0;
+    }
+
+    (x, y, eff_width, eff_height)
 }

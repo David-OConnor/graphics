@@ -200,7 +200,12 @@ where
                 (sys.surface_cfg.width as f32, sys.surface_cfg.height as f32);
 
             graphics.scene.camera.aspect = eff_width / eff_height;
+
+            // These are required for, among other things, calling viewport rect from the 2d to
+            // 3d projection etc; scene is available from the application and generally outside of
+            // the internal renderer. So, copy the values to it.
             graphics.scene.window_size = (new_size.width as f32, new_size.height as f32);
+            // graphics.scene.width_height = (new_size.width as f32, new_size.height as f32);
 
             graphics.depth_texture = Texture::create_depth_texture(
                 &sys.device,

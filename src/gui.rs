@@ -88,27 +88,6 @@ impl GuiState {
 
         let raw_input = self.egui_state.take_egui_input(&graphics.window);
 
-        // let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
-        //     *updates_gui = gui_handler(user_state, ctx, &mut graphics.scene);
-        //
-        //     let mut new_size = match layout {
-        //         UiLayout::Left | UiLayout::Right => ctx.used_size().x,
-        //         _ => ctx.used_size().y,
-        //     };
-        //     // todo: How to fix this? Here or in applications?
-        //     // } * ctx.pixels_per_point();
-        //
-        //     // This error doesn't make much sense, but seems to occur when there is no GUI.
-        //     if new_size == f32::NEG_INFINITY {
-        //         new_size = 0.;
-        //     }
-        //
-        //     if self.size != new_size {
-        //         resize_required = true;
-        //         self.size = new_size;
-        //     }
-        // });
-        // todo: Experimenting
         let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
             *updates_gui = gui_handler(user_state, ctx, &mut graphics.scene);
 
@@ -117,6 +96,10 @@ impl GuiState {
             if self.size != new_size {
                 resize_required = true;
                 self.size = new_size;
+
+                // Allows us to access the GUI size in places where the Scene is available, e.g.
+                // the application.
+                graphics.scene.gui_size = self.size;
             }
         });
 

@@ -37,6 +37,7 @@ pub use types::{
     ControlScheme, EngineUpdates, Entity, GraphicsSettings, InputSettings, Mesh, Scene,
     ScrollBehavior, UiLayoutSides, UiLayoutTopBottom, UiSettings, Vertex,
 };
+pub use window::viewport_rect;
 // Re-export winit DeviceEvents for use in the API; this prevents the calling
 // lib from needing to use winit as a dependency directly.
 // todo: the equiv for mouse events too. And in the future, Gamepad events.

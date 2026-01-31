@@ -7,6 +7,7 @@ use wgpu::{VertexAttribute, VertexBufferLayout, VertexFormat};
 
 use crate::{
     EntityUpdate, camera::Camera, gauss::Gaussian, lighting::Lighting, text_overlay::TextOverlay,
+    viewport_rect,
 };
 
 // These sizes are in bytes. We do this, since that's the data format expected by the shader.
@@ -379,6 +380,8 @@ pub struct Scene {
     pub background_color: (f32, f32, f32),
     pub window_title: String,
     pub window_size: (f32, f32),
+    /// A duplicate of GUI.size, to be available to the application.
+    pub gui_size: (f32, f32),
 }
 
 impl Default for Scene {
@@ -394,6 +397,7 @@ impl Default for Scene {
             background_color: (0.7, 0.7, 0.7),
             window_title: "(Window title here)".to_owned(),
             window_size: (900., 600.),
+            gui_size: (0., 0.),
         }
     }
 }
@@ -404,7 +408,7 @@ impl Scene {
     /// The canonical use case for this is finding the object in 3D space a user is intending to select
     /// with the cursor.A follow-up operation, for example, may be to find all objects that this vector
     /// passes near, and possibly select the one closest to the camera.
-    pub fn screen_to_render(&self, screen_pos: (f32, f32)) -> (Vec3, Vec3) {
+    pub fn screen_to_render(&self, mut screen_pos: (f32, f32)) -> (Vec3, Vec3) {
         let proj_view = self.camera.proj_mat.clone() * self.camera.view_mat();
 
         let proj_view_inv = match proj_view.inverse() {
@@ -415,9 +419,21 @@ impl Scene {
             }
         };
 
-        // Convert screen position (assumed normalized to [0, 1] range)
-        let sx = screen_pos.0 / self.window_size.0;
-        let sy = screen_pos.1 / self.window_size.1;
+        let (x, y, eff_width, eff_height) = viewport_rect(
+            self.gui_size,
+            // This should be the same as sys.surface_config.width and height.
+            self.window_size.0 as u32,
+            self.window_size.1 as u32,
+            // state.ui_settings,
+            &UiSettings::default(), // todo temp. OK as long as using GUI from top and left.
+            0.,                     // Unused, for now.
+        );
+
+        screen_pos.0 -= x;
+        screen_pos.1 -= y;
+
+        let sx = screen_pos.0 / eff_width;
+        let sy = screen_pos.1 / eff_height;
 
         let clip_x = 2.0 * sx - 1.0;
         let clip_y = 1.0 - 2.0 * sy; // Flips the Y so 0 is top, 1 is bottom

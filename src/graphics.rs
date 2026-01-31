@@ -42,6 +42,7 @@ use crate::{
         ControlScheme, EngineUpdates, INSTANCE_LAYOUT, INSTANCE_SIZE, InputSettings, Instance,
         Scene, UiSettings, VERTEX_LAYOUT,
     },
+    viewport_rect,
 };
 
 pub const UP_VEC: Vec3 = Vec3 {
@@ -619,45 +620,6 @@ impl GraphicsState {
         queue.write_buffer(&self.lighting_buf, 0, &self.scene.lighting.to_bytes());
     }
 
-    /// We use this for the text overlay
-    /// todo:  Move out of this module.
-    pub fn viewport_rect(
-        &self,
-        ui_size: (f32, f32), // In EGUI units.
-        // These are in physical pixels.
-        win_width: u32,
-        win_height: u32,
-        ui_settings: &UiSettings,
-        _pixels_per_pt: f32,
-    ) -> (f32, f32, f32, f32) {
-        // Default to full window
-        let mut x = 0.0;
-        let mut y = 0.0;
-        let mut eff_width = win_width as f32;
-        let mut eff_height = win_height as f32;
-
-        // Note: This only supports top and left UI; right and bottom is broken.
-        if ui_settings.layout_sides == UiLayoutSides::Left {
-            x = ui_size.0;
-        }
-        if ui_settings.layout_top_bottom == UiLayoutTopBottom::Top {
-            y = ui_size.1;
-        }
-
-        eff_width -= ui_size.0;
-        eff_height -= ui_size.1;
-
-        // Safety check to prevent crash if UI takes entire screen
-        if eff_width < 1.0 {
-            eff_width = 1.0;
-        }
-        if eff_height < 1.0 {
-            eff_height = 1.0;
-        }
-
-        (x, y, eff_width, eff_height)
-    }
-
     fn setup_render_pass<'a>(
         &mut self,
         encoder: &'a mut CommandEncoder,
@@ -669,7 +631,7 @@ impl GraphicsState {
         pixels_per_pt: f32, // todo: Currently unused.
     ) -> RenderPass<'a> {
         let (x, y, eff_width, eff_height) =
-            self.viewport_rect(ui_size, win_width, win_height, ui_settings, pixels_per_pt);
+            viewport_rect(ui_size, win_width, win_height, ui_settings, pixels_per_pt);
 
         let color_attachment = if let Some(msaa_texture) = &self.msaa_texture {
             // Use MSAA texture as render target, resolve to the swap chain texture
@@ -886,23 +848,6 @@ impl GraphicsState {
 
         viewport_w -= gui.size.0;
         viewport_h -= gui.size.1;
-        //
-        // match ui_settings.layout_sides {
-        //     UiLayoutSides::Left => {
-        //         viewport_w -= gui.size.0;
-        //     }
-        //     UiLayoutSides::Right => {
-        //         viewport_w -= gui.size.0;
-        //     }
-        //     }
-        // }
-        //
-        //
-        // match ui_settings.layout_top_bottom {
-        // UiLayout::Top | crate::types::UiLayout::Bottom => {
-        //         viewport_h -= gui.size.1;
-        //     }
-        // }
 
         if viewport_w > 0.0 && viewport_h > 0.0 {
             self.scene.camera.aspect = viewport_w / viewport_h;
