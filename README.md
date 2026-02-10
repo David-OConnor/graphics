@@ -61,6 +61,9 @@ pub const BODY_SHINYNESS: f32 = 2.;
 pub const BODY_COLOR: Color = (0., 1.0, 0.5);
 
 /// This runs whenever an event (e.g. keyboard, mouse etc) occurs, and provides information on the event.
+/// This is for relatively low-level events that are not window-specific. Note that in Linux on Wayland,
+/// only mouse movement is supported through this interface. In general, it's a good choice for mouse motion,
+/// and game controllers.
 fn event_dev_handler(
     state_: &mut State,
     event: DeviceEvent,
@@ -92,6 +95,7 @@ fn event_dev_handler(
     EngineUpdates::default()
 }
 
+/// Window-specific events. A good default for mouse button/wheel and keyboard inputs.
 fn event_win_handler(
     state: &mut State,
     event: WindowEvent,

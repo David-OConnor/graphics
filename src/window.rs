@@ -145,8 +145,11 @@ where
         let gui = &mut self.gui.as_mut().unwrap();
 
         if !gui.mouse_in_gui {
-            let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;
+            graphics.handle_input_window(&event, &self.scene.input_settings);
+            let _inputs_present = graphics.inputs_commanded.inputs_present();
 
+            // Handle events processed by the application
+            let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;
             let updates_event = (self.event_win_handler)(
                 &mut self.user_state,
                 event.clone(),
@@ -161,6 +164,7 @@ where
         let window = &graphics.window;
         let _ = gui.egui_state.on_window_event(window, &event);
 
+        // Handle events processed by this engine.
         match event {
             WindowEvent::RedrawRequested => {
                 self.redraw();
@@ -281,11 +285,12 @@ where
         let gui = &mut self.gui.as_mut().unwrap();
 
         if !gui.mouse_in_gui {
-            let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;
-
-            graphics.handle_input(&event, &self.scene.input_settings);
+            // Handle events processed by this engine.
+            graphics.handle_input_device(&event, &self.scene.input_settings);
             let inputs_present = graphics.inputs_commanded.inputs_present();
 
+            // Handle events processed by the application
+            let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;
             let updates_event = (self.event_dev_handler)(
                 &mut self.user_state,
                 event,

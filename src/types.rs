@@ -143,6 +143,7 @@ pub(crate) const INSTANCE_LAYOUT: VertexBufferLayout<'static> = VertexBufferLayo
     ],
 };
 
+#[cfg_attr(feature = "app_utils", derive(Encode, Decode))]
 #[derive(Clone, Copy, Debug)]
 /// A general mesh. This should be sufficiently versatile to use for a number of purposes.
 pub struct Vertex {
@@ -207,6 +208,7 @@ impl Vertex {
 pub struct Instance {
     pub position: Vec3,
     pub orientation: Quaternion,
+    pub pivot: Option<Vec3>,
     pub scale: Vec3,
     pub color: Vec3,
     pub opacity: f32,
@@ -218,9 +220,20 @@ impl Instance {
     pub fn to_bytes(&self) -> [u8; INSTANCE_SIZE] {
         let mut result = [0; INSTANCE_SIZE];
 
-        let model_mat = Mat4::new_translation(self.position)
-            * self.orientation.to_matrix()
-            * Mat4::new_scaler_partial(self.scale);
+        let model_mat = match self.pivot {
+            Some(p) => {
+                Mat4::new_translation(self.position)
+                    * Mat4::new_translation(p)
+                    * self.orientation.to_matrix()
+                    * Mat4::new_translation(-p)
+                    * Mat4::new_scaler_partial(self.scale)
+            }
+            None => {
+                Mat4::new_translation(self.position)
+                    * self.orientation.to_matrix()
+                    * Mat4::new_scaler_partial(self.scale)
+            }
+        };
 
         let normal_mat = self.orientation.to_matrix3();
 
@@ -259,6 +272,7 @@ impl From<&Entity> for Instance {
         Self {
             position: entity.position,
             orientation: entity.orientation,
+            pivot: entity.pivot,
             scale,
             color: Vec3::new(entity.color.0, entity.color.1, entity.color.2),
             opacity: entity.opacity,
@@ -267,6 +281,7 @@ impl From<&Entity> for Instance {
     }
 }
 
+#[cfg_attr(feature = "app_utils", derive(Encode, Decode))]
 #[derive(Clone, Debug, Default)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
@@ -289,6 +304,9 @@ pub struct Entity {
     pub position: Vec3,
     /// Rotation, relative to up.
     pub orientation: Quaternion,
+    /// Point relative to the mesh coordinates where we rotate it. If omitted, the
+    /// 0 vec is used.
+    pub pivot: Option<Vec3>,
     pub scale: f32, // 1.0 is original.
     /// Scale by axis. If `Some`, overrides scale.
     /// Not set in the constructor; set after manually.
@@ -317,6 +335,7 @@ impl Default for Entity {
             mesh: 0,
             position: Vec3::new_zero(),
             orientation: Quaternion::new_identity(),
+            pivot: None,
             scale: 1.,
             scale_partial: None,
             color: (1., 1., 1.),
@@ -475,6 +494,10 @@ pub struct InputSettings {
     /// control scheme. For now
     pub scroll_behavior: ScrollBehavior,
     pub middle_click_pan: bool,
+    /// If true, use device events, instead of window events for the engine's built-in
+    /// camera controls. This is a lower-level API. Note that it's incompatible with the Linux
+    /// Wayland UI backend.
+    pub device_events_for_cam_controls: bool,
 }
 
 impl Default for InputSettings {
@@ -487,6 +510,7 @@ impl Default for InputSettings {
             run_factor: 5.,
             scroll_behavior: Default::default(),
             middle_click_pan: true,
+            device_events_for_cam_controls: false,
         }
     }
 }

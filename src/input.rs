@@ -2,7 +2,7 @@
 
 use lin_alg::f32::{Quaternion, Vec3};
 // todo: remove Winit from this module if you can, and make it agnostic?
-use winit::event::{DeviceEvent, ElementState, MouseScrollDelta};
+use winit::event::{DeviceEvent, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey::Code};
 
 use crate::{
@@ -57,10 +57,15 @@ impl InputsCommanded {
 
 /// Modifies the commanded inputs in place; triggered by a single input event.
 /// dt is in seconds.
-/// pub(crate) fn handle_event(event: DeviceEvent, cam: &mut Camera, input_settings: &InputSettings, dt: f32) {
-pub(crate) fn add_input_cmd(event: &DeviceEvent, inputs: &mut InputsCommanded) {
+/// We use this for handling mouse movement. Note that the Wayland Linux UI backend doesn't support
+/// any other types of device events.
+///
+/// If not configured to use device events, this only handles mouse motion.
+pub(crate) fn add_input_cmd_device(event: &DeviceEvent, inputs: &mut InputsCommanded, use_dev_events: bool) {
     // This blocks all key and mouse commands from activating if the cursor has left
     // the window.
+    // Device events can happen even if the window isn't active; use the cursor position
+    // to identify this application as active.
     if inputs.cursor_out_of_window {
         // Resetting inputs effectively "lifts" all pressed keys, so we don't get stuck
         // moving in a direction when the cursor leaves.
@@ -71,112 +76,182 @@ pub(crate) fn add_input_cmd(event: &DeviceEvent, inputs: &mut InputsCommanded) {
         return;
     }
 
+    // Note: We only handle mouse movement events here; we now handle key and button
+    // inputs in the window event handler.
     match event {
         DeviceEvent::Key(key) => {
-            let Code(key_code) = key.physical_key else {
+            if !use_dev_events {
                 return;
+            }
+
+            if let Code(key_code) = key.physical_key {
+                handle_physical_key(inputs, key_code, key.state);
+            };
+        }
+
+        DeviceEvent::Button { button, state } => {
+            if !use_dev_events {
+                return;
+            }
+
+            #[cfg(target_os = "linux")]
+            let button_ = match button {
+                1 => MouseButton::Left,
+                3 => MouseButton::Right,
+                2 => MouseButton::Middle,
+                _ => MouseButton::Other(0) // Placeholder.
+            };
+            #[cfg(not(target_os = "linux"))]
+            let button_ = match button {
+                0 => MouseButton::Left,
+                1 => MouseButton::Right,
+                2 => MouseButton::Middle,
+                _ => MouseButton::Other(0) // Placeholder.
             };
 
-            if key.state == ElementState::Pressed {
-                match key_code {
-                    KeyCode::KeyW => {
-                        inputs.fwd = true;
-                    }
-                    KeyCode::KeyS => {
-                        inputs.back = true;
-                    }
-                    KeyCode::KeyA => {
-                        inputs.left = true;
-                    }
-                    KeyCode::KeyD => {
-                        inputs.right = true;
-                    }
-                    KeyCode::Space => {
-                        inputs.up = true;
-                    }
-                    KeyCode::KeyC => {
-                        inputs.down = true;
-                    }
-                    KeyCode::KeyQ => {
-                        inputs.roll_ccw = true;
-                    }
-                    KeyCode::KeyE => {
-                        inputs.roll_cw = true;
-                    }
-                    KeyCode::ShiftLeft => {
-                        inputs.run = true;
-                    }
-                    _ => (),
-                }
-            } else if key.state == ElementState::Released {
-                // todo: DRY
-                match key_code {
-                    KeyCode::KeyW => {
-                        inputs.fwd = false;
-                    }
-                    KeyCode::KeyS => {
-                        inputs.back = false;
-                    }
-                    KeyCode::KeyA => {
-                        inputs.left = false;
-                    }
-                    KeyCode::KeyD => {
-                        inputs.right = false;
-                    }
-                    KeyCode::Space => {
-                        inputs.up = false;
-                    }
-                    KeyCode::KeyC => {
-                        inputs.down = false;
-                    }
-                    KeyCode::KeyQ => {
-                        inputs.roll_ccw = false;
-                    }
-                    KeyCode::KeyE => {
-                        inputs.roll_cw = false;
-                    }
-                    KeyCode::ShiftLeft => {
-                        inputs.run = false;
-                    }
-                    _ => (),
-                }
-            }
+            handle_mouse_buttons(inputs, button_, *state);
         }
-        DeviceEvent::Button { button, state } => {
-            // todo: Experiment?
-            #[cfg(target_os = "linux")]
-            let left_click = 1;
-            #[cfg(not(target_os = "linux"))]
-            let left_click = 0;
 
-            // What happened: left click (event 0) triggered behavior of event 1.
-
-            if *button == left_click {
-                inputs.free_look = match state {
-                    ElementState::Pressed => true,
-                    ElementState::Released => false,
-                }
+        // Move the camera forward and back on scroll.
+        DeviceEvent::MouseWheel { delta } => {
+            if !use_dev_events {
+                return;
             }
-        }
+
+            handle_mouse_wheel(inputs, delta)
+        },
         DeviceEvent::MouseMotion { delta } => {
             inputs.mouse_delta_x += delta.0 as f32;
             inputs.mouse_delta_y += delta.1 as f32;
         }
-        // Move the camera forward and back on scroll.
-        DeviceEvent::MouseWheel { delta } => match delta {
-            MouseScrollDelta::PixelDelta(_) => (),
-            MouseScrollDelta::LineDelta(_x, y) => {
-                if *y > 0. {
-                    inputs.scroll_down = true;
-                } else {
-                    inputs.scroll_up = true;
-                }
-            }
-        },
+
         _ => (),
     }
 }
 
+/// Modifies the commanded inputs in place; triggered by a single input event.
+/// dt is in seconds.
+///
+/// We use this for handling key, button, and scroll inputs.
+pub(crate) fn add_input_cmd_window(event_: &WindowEvent, inputs: &mut InputsCommanded, use_dev_events: bool) {
+    if use_dev_events {
+        return;
+    }
+
+    match event_ {
+        WindowEvent::KeyboardInput {
+            device_id: _,
+            event,
+            is_synthetic: _,
+        } => {
+            if let Code(code) = event.physical_key {
+                handle_physical_key(inputs, code, event.state)
+            }
+        }
+        WindowEvent::MouseInput {
+            device_id: _,
+            state,
+            button,
+        } => handle_mouse_buttons(inputs, *button, *state),
+        WindowEvent::MouseWheel {
+            device_id: _,
+            delta,
+            phase: _} => handle_mouse_wheel(inputs, delta),
+        _ => (),
+    }
+}
+
+fn handle_mouse_buttons(inputs: &mut InputsCommanded, button: MouseButton, state: ElementState) {
+    if button == MouseButton::Left {
+        inputs.free_look = match state {
+            ElementState::Pressed => true,
+            ElementState::Released => false,
+        }
+    }
+}
+
+fn handle_mouse_wheel(inputs: &mut InputsCommanded, delta: &MouseScrollDelta) {
+    match delta {
+        MouseScrollDelta::PixelDelta(_) => (),
+        MouseScrollDelta::LineDelta(_x, y) => {
+            if *y > 0. {
+                inputs.scroll_down = true;
+            } else {
+                inputs.scroll_up = true;
+            }
+        }
+    }
+}
+
+/// Handles keyboard input from either device, or window events.
+/// Updates `inputs` with the result. For use with this library's built in commands, e.g.
+/// for camera control.
+fn handle_physical_key(inputs: &mut InputsCommanded, code: KeyCode, state: ElementState) {
+    match state {
+        ElementState::Pressed => match code {
+            KeyCode::KeyW => {
+                inputs.fwd = true;
+            }
+            KeyCode::KeyS => {
+                inputs.back = true;
+            }
+            KeyCode::KeyA => {
+                inputs.left = true;
+            }
+            KeyCode::KeyD => {
+                inputs.right = true;
+            }
+            KeyCode::Space => {
+                inputs.up = true;
+            }
+            KeyCode::KeyC => {
+                inputs.down = true;
+            }
+            KeyCode::KeyQ => {
+                inputs.roll_ccw = true;
+            }
+            KeyCode::KeyE => {
+                inputs.roll_cw = true;
+            }
+            KeyCode::ShiftLeft => {
+                inputs.run = true;
+            }
+            _ => (),
+        },
+        ElementState::Released => match code {
+            KeyCode::KeyW => {
+                inputs.fwd = false;
+            }
+            KeyCode::KeyS => {
+                inputs.back = false;
+            }
+            KeyCode::KeyA => {
+                inputs.left = false;
+            }
+            KeyCode::KeyD => {
+                inputs.right = false;
+            }
+            KeyCode::Space => {
+                inputs.up = false;
+            }
+            KeyCode::KeyC => {
+                inputs.down = false;
+            }
+            KeyCode::KeyQ => {
+                inputs.roll_ccw = false;
+            }
+            KeyCode::KeyE => {
+                inputs.roll_cw = false;
+            }
+            KeyCode::ShiftLeft => {
+                inputs.run = false;
+            }
+            _ => (),
+        },
+    }
+}
+
+/// For this library's built-in inputs, e.g. camera control.
 fn handle_scroll(
     cam: &mut Camera,
     inputs: &mut InputsCommanded,

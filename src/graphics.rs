@@ -24,10 +24,12 @@ use wgpu::{
     TextureView, VertexBufferLayout, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
-use winit::{event::DeviceEvent, window::Window};
+use winit::{
+    event::{DeviceEvent, WindowEvent},
+    window::Window,
+};
 
 use crate::{
-    UiLayoutSides, UiLayoutTopBottom,
     camera::CAMERA_SIZE,
     gauss::{
         CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, GaussianInstance, QUAD_VERTEX_LAYOUT,
@@ -396,10 +398,27 @@ impl GraphicsState {
         msaa_texture.create_view(&wgpu::TextureViewDescriptor::default())
     }
 
-    pub(crate) fn handle_input(&mut self, event: &DeviceEvent, input_settings: &InputSettings) {
+    pub(crate) fn handle_input_device(
+        &mut self,
+        event: &DeviceEvent,
+        input_settings: &InputSettings,
+    ) {
         match input_settings.control_scheme {
             ControlScheme::FreeCamera | ControlScheme::Arc { center: _ } => {
-                input::add_input_cmd(event, &mut self.inputs_commanded)
+                input::add_input_cmd_device(event, &mut self.inputs_commanded, input_settings.device_events_for_cam_controls)
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    pub(crate) fn handle_input_window(
+        &mut self,
+        event: &WindowEvent,
+        input_settings: &InputSettings,
+    ) {
+        match input_settings.control_scheme {
+            ControlScheme::FreeCamera | ControlScheme::Arc { center: _ } => {
+                input::add_input_cmd_window(event, &mut self.inputs_commanded, input_settings.device_events_for_cam_controls)
             }
             _ => unimplemented!(),
         }
