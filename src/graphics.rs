@@ -405,7 +405,11 @@ impl GraphicsState {
     ) {
         match input_settings.control_scheme {
             ControlScheme::FreeCamera | ControlScheme::Arc { center: _ } => {
-                input::add_input_cmd_device(event, &mut self.inputs_commanded, input_settings.device_events_for_cam_controls)
+                input::add_input_cmd_device(
+                    event,
+                    &mut self.inputs_commanded,
+                    input_settings.device_events_for_cam_controls,
+                )
             }
             _ => unimplemented!(),
         }
@@ -418,7 +422,11 @@ impl GraphicsState {
     ) {
         match input_settings.control_scheme {
             ControlScheme::FreeCamera | ControlScheme::Arc { center: _ } => {
-                input::add_input_cmd_window(event, &mut self.inputs_commanded, input_settings.device_events_for_cam_controls)
+                input::add_input_cmd_window(
+                    event,
+                    &mut self.inputs_commanded,
+                    input_settings.device_events_for_cam_controls,
+                )
             }
             _ => unimplemented!(),
         }

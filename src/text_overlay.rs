@@ -82,8 +82,13 @@ impl GraphicsState {
         let logical_width = (width as f32 / pixels_per_pt).round() as u32;
         let logical_height = (height as f32 / pixels_per_pt).round() as u32;
 
-        let (x, y, eff_width, eff_height) =
-            viewport_rect(ui_size, logical_width, logical_height, ui_settings, pixels_per_pt);
+        let (x, y, eff_width, eff_height) = viewport_rect(
+            ui_size,
+            logical_width,
+            logical_height,
+            ui_settings,
+            pixels_per_pt,
+        );
 
         let (in_view, ndc) = self.scene.camera.in_view(world);
         if !in_view {

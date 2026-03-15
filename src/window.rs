@@ -114,16 +114,32 @@ where
             None => None,
         };
 
-        let attributes = WindowAttributes::default()
+        let requested_w = self.scene.window_size.0;
+        let requested_h = self.scene.window_size.1;
+
+        // Check if the requested logical size fits on the primary monitor.
+        // On HiDPI displays the logical screen size can be smaller than the requested
+        // window size (e.g. a Surface tablet at 2× DPI has ~1368×912 logical pixels),
+        // so we maximise instead of creating a window that overflows the screen.
+        let fits_on_screen = event_loop
+            .primary_monitor()
+            .map(|m| {
+                let scale = m.scale_factor() as f32;
+                let logical_w = m.size().width as f32 / scale;
+                let logical_h = m.size().height as f32 / scale;
+                requested_w <= logical_w && requested_h <= logical_h
+            })
+            .unwrap_or(true); // If monitor info unavailable, try the requested size
+
+        let base_attributes = WindowAttributes::default()
             .with_title(&self.scene.window_title)
-            // Physical size vs logical size has implications for pixel-scaled setups,
-            // like some high-resolution but small-screen tablets and laptops.
-            .with_inner_size(winit::dpi::LogicalSize::new(
-                // .with_inner_size(winit::dpi::PhysicalSize::new(
-                self.scene.window_size.0,
-                self.scene.window_size.1,
-            ))
             .with_window_icon(icon);
+
+        let attributes = if fits_on_screen {
+            base_attributes.with_inner_size(winit::dpi::LogicalSize::new(requested_w, requested_h))
+        } else {
+            base_attributes.with_maximized(true)
+        };
 
         let window = event_loop.create_window(attributes).unwrap();
 

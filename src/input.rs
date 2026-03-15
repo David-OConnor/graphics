@@ -61,7 +61,11 @@ impl InputsCommanded {
 /// any other types of device events.
 ///
 /// If not configured to use device events, this only handles mouse motion.
-pub(crate) fn add_input_cmd_device(event: &DeviceEvent, inputs: &mut InputsCommanded, use_dev_events: bool) {
+pub(crate) fn add_input_cmd_device(
+    event: &DeviceEvent,
+    inputs: &mut InputsCommanded,
+    use_dev_events: bool,
+) {
     // This blocks all key and mouse commands from activating if the cursor has left
     // the window.
     // Device events can happen even if the window isn't active; use the cursor position
@@ -99,14 +103,14 @@ pub(crate) fn add_input_cmd_device(event: &DeviceEvent, inputs: &mut InputsComma
                 1 => MouseButton::Left,
                 3 => MouseButton::Right,
                 2 => MouseButton::Middle,
-                _ => MouseButton::Other(0) // Placeholder.
+                _ => MouseButton::Other(0), // Placeholder.
             };
             #[cfg(not(target_os = "linux"))]
             let button_ = match button {
                 0 => MouseButton::Left,
                 1 => MouseButton::Right,
                 2 => MouseButton::Middle,
-                _ => MouseButton::Other(0) // Placeholder.
+                _ => MouseButton::Other(0), // Placeholder.
             };
 
             handle_mouse_buttons(inputs, button_, *state);
@@ -119,7 +123,7 @@ pub(crate) fn add_input_cmd_device(event: &DeviceEvent, inputs: &mut InputsComma
             }
 
             handle_mouse_wheel(inputs, delta)
-        },
+        }
         DeviceEvent::MouseMotion { delta } => {
             inputs.mouse_delta_x += delta.0 as f32;
             inputs.mouse_delta_y += delta.1 as f32;
@@ -133,7 +137,11 @@ pub(crate) fn add_input_cmd_device(event: &DeviceEvent, inputs: &mut InputsComma
 /// dt is in seconds.
 ///
 /// We use this for handling key, button, and scroll inputs.
-pub(crate) fn add_input_cmd_window(event_: &WindowEvent, inputs: &mut InputsCommanded, use_dev_events: bool) {
+pub(crate) fn add_input_cmd_window(
+    event_: &WindowEvent,
+    inputs: &mut InputsCommanded,
+    use_dev_events: bool,
+) {
     if use_dev_events {
         return;
     }
@@ -156,7 +164,8 @@ pub(crate) fn add_input_cmd_window(event_: &WindowEvent, inputs: &mut InputsComm
         WindowEvent::MouseWheel {
             device_id: _,
             delta,
-            phase: _} => handle_mouse_wheel(inputs, delta),
+            phase: _,
+        } => handle_mouse_wheel(inputs, delta),
         _ => (),
     }
 }
