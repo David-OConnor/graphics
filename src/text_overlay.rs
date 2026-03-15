@@ -77,8 +77,13 @@ impl GraphicsState {
         ui_size: (f32, f32),
         pixels_per_pt: f32,
     ) -> Option<Pos2> {
+        // Convert physical pixels to logical pixels (egui points) so the result is
+        // in egui point space and Pos2 is placed correctly on HiDPI displays.
+        let logical_width = (width as f32 / pixels_per_pt).round() as u32;
+        let logical_height = (height as f32 / pixels_per_pt).round() as u32;
+
         let (x, y, eff_width, eff_height) =
-            viewport_rect(ui_size, width, height, ui_settings, pixels_per_pt);
+            viewport_rect(ui_size, logical_width, logical_height, ui_settings, pixels_per_pt);
 
         let (in_view, ndc) = self.scene.camera.in_view(world);
         if !in_view {
