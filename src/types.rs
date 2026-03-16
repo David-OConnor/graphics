@@ -515,14 +515,45 @@ impl Default for InputSettings {
     }
 }
 
+/// Dims areas "inside" a model. Can make things look much better, more realistic,
+/// or help the viewer visually understand a 3d structure.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum AmbientOcclusion {
+    None,
+    /// Screen-space
+    Ssao,
+    /// Ground-truth AO. More accurate. Maybe slower or tougher to implement?
+    Gtao,
+}
+
+/// Settings that affect visual quality, and appearance. Most of These
+/// also impact performance. (i.e. frame rate)
+/// [Article with some details](https://vcg.isti.cnr.it/Publications/2006/TCM06/Tarini_FinalVersionElec.pdf)
 #[derive(Clone, Debug)]
 pub struct GraphicsSettings {
     pub msaa_samples: u32,
+    pub ambient_occlusion: AmbientOcclusion,
+    /// Also known as cast shadows
+    pub self_shadowing: bool,
+    /// None = disabled. Some(strength) enables edge cueing at the given intensity (0.0–1.0 typical).
+    pub edge_cueing: Option<f32>,
+    /// May be specific to molecule rendering and similar
+    pub depth_aware_halos: bool,
+    pub depth_revealing_contour_lines: bool,
+    pub intersection_revealing_contour_lines: bool,
 }
 
 impl Default for GraphicsSettings {
     fn default() -> Self {
-        Self { msaa_samples: 4 }
+        Self {
+            msaa_samples: 4,
+            self_shadowing: true,
+            edge_cueing: Some(3.), // todo: Experiment
+            ambient_occlusion: AmbientOcclusion::Ssao,
+            depth_aware_halos: true,
+            depth_revealing_contour_lines: true,
+            intersection_revealing_contour_lines: true,
+        }
     }
 }
 

@@ -8,6 +8,10 @@ struct Camera {
     fog_start: f32,
     fog_end: f32,
     fog_color: vec3<f32>,
+    // Edge cueing: 0.0 = off, 1.0 = full strength. Darkens silhouette edges.
+    edge_cueing: f32,
+    near: f32,
+    far: f32,
 }
 
 struct PointLight {
@@ -242,7 +246,14 @@ fn fs_main(
         result = vec4<f32>(fogged, result.a);
     }
 
-    result = vec4<f32>(result.rgb, result.a);
+    // Edge cueing: darken silhouette edges where the surface normal is nearly
+    // perpendicular to the view direction (Tarini et al. 2006).
+    if camera.edge_cueing > 0.0 {
+        let n_dot_v = abs(dot(normal, view_dir));
+        let edge_factor = pow(1.0 - n_dot_v, 3.0);
+        let darkening = 1.0 - camera.edge_cueing * 0.85 * edge_factor;
+        result = vec4<f32>(result.rgb * darkening, result.a);
+    }
 
     return result;
 }

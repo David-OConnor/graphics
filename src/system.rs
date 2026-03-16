@@ -161,6 +161,11 @@ where
             surface_cfg,
         };
 
+        // Sync GraphicsSettings into camera fields before cloning into GraphicsState.
+        if let Some(strength) = self.graphics_settings.edge_cueing {
+            self.scene.camera.edge_cueing = strength;
+        }
+
         let graphics = GraphicsState::new(
             &render.device,
             &render.surface_cfg,

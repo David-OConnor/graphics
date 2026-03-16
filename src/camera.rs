@@ -35,6 +35,9 @@ pub struct Camera {
     /// Distance where fog reaches full strength
     pub fog_end: f32,
     pub fog_color: [f32; 3],
+    /// Strength of edge cueing (silhouette darkening). 0.0 = off, 1.0 = full effect.
+    /// Controlled at startup via GraphicsSettings::edge_cueing.
+    pub edge_cueing: f32,
 }
 
 impl Camera {
@@ -63,7 +66,14 @@ impl Camera {
         i += F32_SIZE;
         copy_ne!(result, self.fog_color[1], i..i + F32_SIZE);
         i += F32_SIZE;
-        copy_ne!(result, self.fog_color[1], i..i + F32_SIZE);
+        copy_ne!(result, self.fog_color[2], i..i + F32_SIZE);
+
+        // WGSL layout: fog_color: vec3<f32> at 96..108 (12 bytes).
+        // After it, edge_cueing at 108, near at 112, far at 116.
+        // These fit within CAMERA_SIZE = 128 (previously unused padding).
+        copy_ne!(result, self.edge_cueing, 108..112);
+        copy_ne!(result, self.near, 112..116);
+        copy_ne!(result, self.far, 116..120);
 
         result
     }
@@ -126,6 +136,7 @@ impl Default for Camera {
             fog_start: 0.,
             fog_end: 0.,
             fog_color: [0., 0., 0.],
+            edge_cueing: 0.,
         };
 
         result.update_proj_mat();
