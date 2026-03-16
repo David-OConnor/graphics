@@ -541,8 +541,10 @@ pub struct GraphicsSettings {
     /// creating dark halo rings where foreground objects occlude background ones.
     /// None = disabled. Some(0.08) is a reasonable starting point.
     pub depth_aware_halos: Option<f32>,
-    pub depth_revealing_contour_lines: bool,
-    pub intersection_revealing_contour_lines: bool,
+    /// Contour lines whose opacity scales with the depth jump. None = off. Some(strength).
+    pub depth_revealing_contour_lines: Option<f32>,
+    /// Contour lines with fixed opacity wherever depth jumps at all. None = off. Some(strength).
+    pub intersection_revealing_contour_lines: Option<f32>,
 }
 
 impl Default for GraphicsSettings {
@@ -550,11 +552,11 @@ impl Default for GraphicsSettings {
         Self {
             msaa_samples: 4,
             self_shadowing: true,
-            edge_cueing: Some(3.), // todo: Experiment
+            edge_cueing: None,
             ambient_occlusion: AmbientOcclusion::Ssao,
             depth_aware_halos: None,
-            depth_revealing_contour_lines: true,
-            intersection_revealing_contour_lines: true,
+            depth_revealing_contour_lines: None,
+            intersection_revealing_contour_lines: None,
         }
     }
 }

@@ -141,6 +141,19 @@ pub(crate) struct GraphicsState {
     pub window: Arc<Window>,
     /// World-space expansion (along normals) used in the halo prepass. 0 = disabled.
     pub halo_expansion: f32,
+    /// 1-sample depth texture written by the contour depth prepass, sampled by the overlay.
+    pub depth_texture_contour: Texture,
+    /// Depth-only pipeline for populating depth_texture_contour (1-sample, back-face cull).
+    pipeline_contour_depth: RenderPipeline,
+    /// Full-screen pipeline that reads depth_texture_contour and overlays contour lines.
+    pipeline_contour_overlay: RenderPipeline,
+    /// Bind group for the contour overlay: depth texture + uniform buffer.
+    pub bind_group_contour: wgpu::BindGroup,
+    /// Layout reused when recreating the contour bind group on resize.
+    pub layout_contour: wgpu::BindGroupLayout,
+    pub contour_uniform_buf: Buffer,
+    pub depth_revealing: f32,
+    pub intersection_revealing: f32,
 }
 
 impl GraphicsState {
@@ -151,6 +164,8 @@ impl GraphicsState {
         window: Arc<Window>,
         msaa_samples: u32,
         halo_expansion: f32,
+        depth_revealing: f32,
+        intersection_revealing: f32,
     ) -> Self {
         let vertex_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex buffer"),
@@ -308,6 +323,84 @@ impl GraphicsState {
             depth_stencil_mesh.clone(),
         );
 
+        // ── Contour lines ────────────────────────────────────────────────────────────
+        // A 1-sample depth texture populated by a prepass; always 1-sample so it can
+        // be bound as texture_depth_2d in the overlay shader regardless of MSAA setting.
+        let depth_texture_contour =
+            Texture::create_depth_texture(device, surface_cfg, "Depth texture contour", 1);
+
+        // Prepass pipeline: same shader, depth-only (fragment: None), 1-sample, back-face cull.
+        let pipeline_contour_depth = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Contour depth prepass layout"),
+                bind_group_layouts: &[&bind_groups.layout_cam],
+                push_constant_ranges: &[],
+            });
+            create_contour_depth_pipeline(
+                device,
+                &layout,
+                shader_mesh.clone(),
+                &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            )
+        };
+
+        // Overlay pipeline: full-screen triangle, alpha-blended, no depth attachment.
+        let shader_contour = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Contour overlay shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader_contour.wgsl").into()),
+        });
+        let layout_contour = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Contour bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(32),
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let contour_uniform_buf = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Contour uniform buffer"),
+            contents: &contour_uniform_bytes(
+                0.1,
+                depth_revealing,
+                intersection_revealing,
+                scene.camera.near,
+                scene.camera.far,
+            ),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+        let bind_group_contour = create_contour_bind_group(
+            device,
+            &layout_contour,
+            &depth_texture_contour.view,
+            &contour_uniform_buf,
+        );
+        let pipeline_contour_overlay = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Contour overlay pipeline layout"),
+                bind_group_layouts: &[&layout_contour],
+                push_constant_ranges: &[],
+            });
+            create_contour_overlay_pipeline(device, &layout, shader_contour, surface_cfg)
+        };
+        // ── End contour ──────────────────────────────────────────────────────────────
+
         // We initialize instances, the instance buffer and mesh mappings in `setup_entities`.
         // let instances = Vec::new();
         let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
@@ -407,6 +500,14 @@ impl GraphicsState {
             pipeline_mesh_transparent_back,
             pipeline_gauss,
             pipeline_halo,
+            depth_texture_contour,
+            pipeline_contour_depth,
+            pipeline_contour_overlay,
+            bind_group_contour,
+            layout_contour,
+            contour_uniform_buf,
+            depth_revealing,
+            intersection_revealing,
             depth_texture,
             // staging_belt: wgpu::util::StagingBelt::new(0x100),
             scene,
@@ -938,6 +1039,45 @@ impl GraphicsState {
         // an error about an index being out of bounds.
         process_engine_updates(&updates_gui, self, device, queue);
 
+        // Contour depth prepass: render opaque geometry to the 1-sample contour depth texture.
+        let contours_active = self.depth_revealing > 0. || self.intersection_revealing > 0.;
+        if contours_active && self.instance_buf.size() > 0 {
+            let mut pre = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Contour depth prepass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture_contour.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pre.set_pipeline(&self.pipeline_contour_depth);
+            pre.set_bind_group(0, &self.bind_groups.cam, &[]);
+            pre.set_vertex_buffer(0, self.vertex_buf.slice(..));
+            pre.set_vertex_buffer(1, self.instance_buf.slice(..));
+            pre.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
+            let mut start_ind = 0u32;
+            for (i, mesh) in self.scene.meshes.iter().enumerate() {
+                let (vertex_start, instance_start, instance_count) = self.mesh_mappings[i];
+                if instance_count == 0 {
+                    start_ind += mesh.indices.len() as u32;
+                    continue;
+                }
+                pre.draw_indexed(
+                    start_ind..start_ind + mesh.indices.len() as u32,
+                    vertex_start,
+                    instance_start..instance_start + instance_count,
+                );
+                start_ind += mesh.indices.len() as u32;
+            }
+            drop(pre);
+        }
+
         let rpass = self.setup_render_pass(
             &mut encoder,
             output_texture,
@@ -969,6 +1109,29 @@ impl GraphicsState {
         gui.egui_renderer
             .render(&mut rpass, &tris, &screen_descriptor);
         drop(rpass); // Ends the render pass.
+
+        // Contour overlay: alpha-blend dark lines on top of the resolved scene.
+        if contours_active {
+            let mut overlay = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Contour overlay"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: output_texture,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load, // preserve the rendered scene
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            overlay.set_pipeline(&self.pipeline_contour_overlay);
+            overlay.set_bind_group(0, &self.bind_group_contour, &[]);
+            overlay.draw(0..3, 0..1); // full-screen triangle
+            drop(overlay);
+        }
 
         for x in &gui_full_output.textures_delta.free {
             gui.egui_renderer.free_texture(x)
@@ -1089,6 +1252,135 @@ fn create_render_pipeline_depth_only(
         },
         multiview: None,
         cache: None,
+    })
+}
+
+/// Returns the 32-byte ContourUniforms buffer content matching shader_contour.wgsl.
+pub(crate) fn contour_uniform_bytes(
+    depth_threshold: f32,
+    depth_revealing: f32,
+    intersection_revealing: f32,
+    near: f32,
+    far: f32,
+) -> [u8; 32] {
+    let mut b = [0u8; 32];
+    b[0..4].copy_from_slice(&depth_threshold.to_ne_bytes());
+    b[4..8].copy_from_slice(&depth_revealing.to_ne_bytes());
+    b[8..12].copy_from_slice(&intersection_revealing.to_ne_bytes());
+    b[12..16].copy_from_slice(&near.to_ne_bytes());
+    b[16..20].copy_from_slice(&far.to_ne_bytes());
+    b
+}
+
+/// Depth-only prepass pipeline for the contour effect (1-sample, back-face cull, no color output).
+fn create_contour_depth_pipeline(
+    device: &Device,
+    layout: &wgpu::PipelineLayout,
+    shader: wgpu::ShaderModule,
+    vertex_buffers: &'static [VertexBufferLayout<'static>],
+) -> RenderPipeline {
+    let depth_stencil = DepthStencilState {
+        format: DEPTH_FORMAT,
+        depth_write_enabled: true,
+        depth_compare: wgpu::CompareFunction::Less,
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState::default(),
+    };
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Contour depth prepass pipeline"),
+        layout: Some(layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: vertex_buffers,
+        },
+        fragment: None, // No color attachment in this pass → compatible.
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: Some(Face::Back),
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: Some(depth_stencil),
+        multisample: wgpu::MultisampleState {
+            count: 1, // Always 1-sample; the depth_texture_contour is 1-sample.
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview: None,
+        cache: None,
+    })
+}
+
+/// Full-screen alpha-blended pipeline for overlaying contour lines on the scene.
+fn create_contour_overlay_pipeline(
+    device: &Device,
+    layout: &wgpu::PipelineLayout,
+    shader: wgpu::ShaderModule,
+    config: &SurfaceConfiguration,
+) -> RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Contour overlay pipeline"),
+        layout: Some(layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs_contour"),
+            compilation_options: Default::default(),
+            buffers: &[], // positions from vertex_index
+        },
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs_contour"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: config.format,
+                blend: Some(BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: None, // No depth attachment in the overlay pass.
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview: None,
+        cache: None,
+    })
+}
+
+pub(crate) fn create_contour_bind_group(
+    device: &Device,
+    layout: &wgpu::BindGroupLayout,
+    depth_view: &TextureView,
+    uniform_buf: &Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Contour bind group"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(depth_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: uniform_buf.as_entire_binding(),
+            },
+        ],
     })
 }
 

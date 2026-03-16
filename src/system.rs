@@ -22,7 +22,7 @@ use winit::{
 
 use crate::{
     EntityUpdate,
-    graphics::GraphicsState,
+    graphics::{GraphicsState, create_contour_bind_group},
     gui::GuiState,
     texture::Texture,
     types::{EngineUpdates, GraphicsSettings, Scene, UiSettings},
@@ -175,6 +175,12 @@ where
             window.clone(),
             self.graphics_settings.msaa_samples,
             self.graphics_settings.depth_aware_halos.unwrap_or(0.),
+            self.graphics_settings
+                .depth_revealing_contour_lines
+                .unwrap_or(0.),
+            self.graphics_settings
+                .intersection_revealing_contour_lines
+                .unwrap_or(0.),
         );
 
         self.gui = Some(GuiState::new(
@@ -218,6 +224,19 @@ where
                 &sys.surface_cfg,
                 "Depth texture",
                 self.graphics_settings.msaa_samples,
+            );
+
+            graphics.depth_texture_contour = Texture::create_depth_texture(
+                &sys.device,
+                &sys.surface_cfg,
+                "Depth texture contour",
+                1,
+            );
+            graphics.bind_group_contour = create_contour_bind_group(
+                &sys.device,
+                &graphics.layout_contour,
+                &graphics.depth_texture_contour.view,
+                &graphics.contour_uniform_buf,
             );
 
             if let Some(t) = &mut graphics.msaa_texture {
