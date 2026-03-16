@@ -38,6 +38,9 @@ pub struct Camera {
     /// Strength of edge cueing (silhouette darkening). 0.0 = off, 1.0 = full effect.
     /// Controlled at startup via GraphicsSettings::edge_cueing.
     pub edge_cueing: f32,
+    /// World-space expansion along normals used in the depth-aware halo prepass.
+    /// 0.0 = disabled. Set from GraphicsSettings::depth_aware_halos.
+    pub halo_expansion: f32,
 }
 
 impl Camera {
@@ -74,6 +77,7 @@ impl Camera {
         copy_ne!(result, self.edge_cueing, 108..112);
         copy_ne!(result, self.near, 112..116);
         copy_ne!(result, self.far, 116..120);
+        copy_ne!(result, self.halo_expansion, 120..124);
 
         result
     }
@@ -137,6 +141,7 @@ impl Default for Camera {
             fog_end: 0.,
             fog_color: [0., 0., 0.],
             edge_cueing: 0.,
+            halo_expansion: 0.,
         };
 
         result.update_proj_mat();

@@ -174,6 +174,7 @@ where
             // ui_settings,
             window.clone(),
             self.graphics_settings.msaa_samples,
+            self.graphics_settings.depth_aware_halos.unwrap_or(0.),
         );
 
         self.gui = Some(GuiState::new(

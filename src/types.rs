@@ -537,8 +537,10 @@ pub struct GraphicsSettings {
     pub self_shadowing: bool,
     /// None = disabled. Some(strength) enables edge cueing at the given intensity (0.0–1.0 typical).
     pub edge_cueing: Option<f32>,
-    /// May be specific to molecule rendering and similar
-    pub depth_aware_halos: bool,
+    /// Inflates meshes by this world-space amount (along normals) in a depth-only prepass,
+    /// creating dark halo rings where foreground objects occlude background ones.
+    /// None = disabled. Some(0.08) is a reasonable starting point.
+    pub depth_aware_halos: Option<f32>,
     pub depth_revealing_contour_lines: bool,
     pub intersection_revealing_contour_lines: bool,
 }
@@ -550,7 +552,7 @@ impl Default for GraphicsSettings {
             self_shadowing: true,
             edge_cueing: Some(3.), // todo: Experiment
             ambient_occlusion: AmbientOcclusion::Ssao,
-            depth_aware_halos: true,
+            depth_aware_halos: None,
             depth_revealing_contour_lines: true,
             intersection_revealing_contour_lines: true,
         }

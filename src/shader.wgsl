@@ -12,6 +12,8 @@ struct Camera {
     edge_cueing: f32,
     near: f32,
     far: f32,
+    // Depth-aware halo prepass: > 0 means inflate vertices along normals by this amount.
+    halo_expansion: f32,
 }
 
 struct PointLight {
@@ -126,6 +128,13 @@ fn vs_main(
 
     // Pad the model position with 1., for use with the 4x4 transform mats.
     var world_posit = model_mat * vec4<f32>(vertex_in.position, 1.0);
+
+    // Depth-aware halo prepass: push vertices outward along world normals.
+    // Combined with front-face culling and depth-only writes, this causes background
+    // objects near a foreground silhouette to fail the depth test, producing a halo ring.
+    if camera.halo_expansion > 0.0 {
+        world_posit = world_posit + vec4<f32>(world_normal * camera.halo_expansion, 0.0);
+    }
 
     var result: VertexOut;
 

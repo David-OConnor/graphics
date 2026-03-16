@@ -37,7 +37,7 @@ use crate::{
     },
     gui::GuiState,
     input::{self, InputsCommanded},
-    system::{DEPTH_FORMAT, process_engine_updates},
+    system::{COLOR_FORMAT, DEPTH_FORMAT, process_engine_updates},
     text_overlay::draw_text_overlay,
     texture::Texture,
     types::{
@@ -115,6 +115,10 @@ pub(crate) struct GraphicsState {
     instance_buf_gauss: Buffer,
     pub bind_groups: BindGroupData,
     pub camera_buf: Buffer,
+    /// Separate camera buffer for the depth-aware halo prepass (halo_expansion > 0).
+    camera_buf_halo: Buffer,
+    /// Bind group pointing at camera_buf_halo, used during the halo prepass.
+    bind_group_cam_halo: wgpu::BindGroup,
     pub cam_basis_buf: Buffer, // For gaussians
     lighting_buf: Buffer,
     /// For opaque meshes
@@ -125,6 +129,8 @@ pub(crate) struct GraphicsState {
     /// are transparent, and double-sided.
     pub pipeline_mesh_transparent_back: RenderPipeline, // todo: Move to renderer.
     pub pipeline_gauss: RenderPipeline, // todo: Move to renderer.
+    /// Depth-only, front-face-culled pipeline for the halo prepass.
+    pipeline_halo: RenderPipeline,
     pub depth_texture: Texture,
     pub msaa_texture: Option<TextureView>, // MSAA Multisampled texture
     pub inputs_commanded: InputsCommanded,
@@ -133,6 +139,8 @@ pub(crate) struct GraphicsState {
     mesh_mappings: Vec<(i32, u32, u32)>,
     mesh_mappings_transparent: Vec<(i32, u32, u32)>,
     pub window: Arc<Window>,
+    /// World-space expansion (along normals) used in the halo prepass. 0 = disabled.
+    pub halo_expansion: f32,
 }
 
 impl GraphicsState {
@@ -142,6 +150,7 @@ impl GraphicsState {
         mut scene: Scene,
         window: Arc<Window>,
         msaa_samples: u32,
+        halo_expansion: f32,
     ) -> Self {
         let vertex_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex buffer"),
@@ -192,6 +201,26 @@ impl GraphicsState {
         //
 
         let bind_groups = create_bindgroups(device, &cam_buf, &cam_basis_buf, &lighting_buf);
+
+        // Halo prepass resources: a separate camera buffer with halo_expansion set.
+        let cam_halo_bytes = {
+            let mut halo_cam = scene.camera.clone();
+            halo_cam.halo_expansion = halo_expansion;
+            halo_cam.to_bytes()
+        };
+        let cam_halo_buf = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Camera halo buffer"),
+            contents: &cam_halo_bytes,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+        let bind_group_cam_halo = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_groups.layout_cam,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: cam_halo_buf.as_entire_binding(),
+            }],
+            label: Some("Camera halo bind group"),
+        });
 
         let depth_texture =
             Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_samples);
@@ -261,6 +290,22 @@ impl GraphicsState {
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Front),
             "Render pipeline mesh transparent – backfaces",
+        );
+
+        // Halo prepass: depth-only, front-face culled, inflated by halo_expansion in vs.
+        // Only needs the camera bind group (no fragment stage → no lighting needed).
+        let pipeline_layout_halo = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Halo pipeline layout"),
+            bind_group_layouts: &[&bind_groups.layout_cam, &bind_groups.layout_lighting],
+            push_constant_ranges: &[],
+        });
+        let pipeline_halo = create_render_pipeline_depth_only(
+            device,
+            &pipeline_layout_halo,
+            shader_mesh.clone(),
+            msaa_samples,
+            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            depth_stencil_mesh.clone(),
         );
 
         // We initialize instances, the instance buffer and mesh mappings in `setup_entities`.
@@ -353,12 +398,15 @@ impl GraphicsState {
             instance_buf_gauss: instance_gauss_buf,
             bind_groups,
             camera_buf: cam_buf,
+            camera_buf_halo: cam_halo_buf,
+            bind_group_cam_halo,
             cam_basis_buf,
             lighting_buf,
             pipeline_mesh,
             pipeline_mesh_transparent,
             pipeline_mesh_transparent_back,
             pipeline_gauss,
+            pipeline_halo,
             depth_texture,
             // staging_belt: wgpu::util::StagingBelt::new(0x100),
             scene,
@@ -367,6 +415,7 @@ impl GraphicsState {
             mesh_mappings_transparent,
             window,
             msaa_texture,
+            halo_expansion,
         };
 
         result.setup_vertices_indices(device);
@@ -633,6 +682,12 @@ impl GraphicsState {
     pub(crate) fn update_camera(&mut self, queue: &Queue) {
         queue.write_buffer(&self.camera_buf, 0, &self.scene.camera.to_bytes());
 
+        if self.halo_expansion > 0.0 {
+            let mut halo_cam = self.scene.camera.clone();
+            halo_cam.halo_expansion = self.halo_expansion;
+            queue.write_buffer(&self.camera_buf_halo, 0, &halo_cam.to_bytes());
+        }
+
         // Required due to not being able to take inverse of 4x4 matrices in shaders?
         if !self.scene.gaussians.is_empty() {
             queue.write_buffer(
@@ -704,6 +759,33 @@ impl GraphicsState {
         });
 
         rpass.set_viewport(x, y, eff_width, eff_height, 0., 1.);
+
+        // Depth-aware halo prepass: render opaque instances inflated along normals, front-face
+        // culled, writing only to the depth buffer. Background fragments near a foreground
+        // silhouette then fail the depth test in the main render, producing a halo ring.
+        if self.halo_expansion > 0.0 && self.instance_buf.size() > 0 {
+            rpass.set_pipeline(&self.pipeline_halo);
+            rpass.set_bind_group(0, &self.bind_group_cam_halo, &[]);
+            rpass.set_bind_group(1, &self.bind_groups.lighting, &[]);
+            rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
+            rpass.set_vertex_buffer(1, self.instance_buf.slice(..));
+            rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
+
+            let mut start_ind = 0u32;
+            for (i, mesh) in self.scene.meshes.iter().enumerate() {
+                let (vertex_start, instance_start, instance_count) = self.mesh_mappings[i];
+                if instance_count == 0 {
+                    start_ind += mesh.indices.len() as u32;
+                    continue;
+                }
+                rpass.draw_indexed(
+                    start_ind..start_ind + mesh.indices.len() as u32,
+                    vertex_start,
+                    instance_start..instance_start + instance_count,
+                );
+                start_ind += mesh.indices.len() as u32;
+            }
+        }
 
         // Make a render pass for opaque meshes, and transparent ones. We separate them to only
         // back-cull opaque ones.
@@ -953,6 +1035,58 @@ fn create_render_pipeline(
         },
         // If the pipeline will be used with a multiview render pass, this
         // indicates how many array layers the attachments will have.
+        multiview: None,
+        cache: None,
+    })
+}
+
+/// Depth-only pipeline (no fragment stage). Used for the halo prepass.
+fn create_render_pipeline_depth_only(
+    device: &Device,
+    layout: &wgpu::PipelineLayout,
+    shader: wgpu::ShaderModule,
+    sample_count: u32,
+    vertex_buffers: &'static [VertexBufferLayout<'static>],
+    depth_stencil: DepthStencilState,
+) -> RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Halo depth-only pipeline"),
+        layout: Some(layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: vertex_buffers,
+        },
+        // Fragment stage declared to match the render pass color attachment format,
+        // but write_mask is empty so nothing is actually written to color.
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: COLOR_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::empty(),
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            // Cull front faces so only back faces of the inflated mesh write depth,
+            // which places those values *behind* the real surface at the same pixel.
+            cull_mode: Some(Face::Front),
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: Some(depth_stencil),
+        multisample: wgpu::MultisampleState {
+            count: sample_count,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
         multiview: None,
         cache: None,
     })
