@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(wc:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(grep -r \"inverse\\\\|invert\" /c/Users/david/code/graphics/src/ --include=*.rs -l)",
+      "Read(//c/Users/david/.cargo/registry/src/**)",
+      "Bash(cargo build:*)"
     ]
   }
 }

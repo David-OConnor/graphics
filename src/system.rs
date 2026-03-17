@@ -22,10 +22,10 @@ use winit::{
 
 use crate::{
     EntityUpdate,
-    graphics::{GraphicsState, create_contour_bind_group},
+    graphics::{GraphicsState, create_contour_bind_group, create_ssao_bind_group},
     gui::GuiState,
     texture::Texture,
-    types::{EngineUpdates, GraphicsSettings, Scene, UiSettings},
+    types::{AmbientOcclusion, EngineUpdates, GraphicsSettings, Scene, UiSettings},
 };
 
 pub const COLOR_FORMAT: TextureFormat = TextureFormat::Bgra8UnormSrgb;
@@ -166,6 +166,11 @@ where
             self.scene.camera.edge_cueing = strength;
         }
 
+        let ssao_strength = match self.graphics_settings.ambient_occlusion {
+            AmbientOcclusion::Ssao => 1.5,
+            _ => 0.0,
+        };
+
         let graphics = GraphicsState::new(
             &render.device,
             &render.surface_cfg,
@@ -181,6 +186,7 @@ where
             self.graphics_settings
                 .intersection_revealing_contour_lines
                 .unwrap_or(0.),
+            ssao_strength,
         );
 
         self.gui = Some(GuiState::new(
@@ -237,6 +243,12 @@ where
                 &graphics.layout_contour,
                 &graphics.depth_texture_contour.view,
                 &graphics.contour_uniform_buf,
+            );
+            graphics.bind_group_ssao = create_ssao_bind_group(
+                &sys.device,
+                &graphics.layout_ssao,
+                &graphics.depth_texture_contour.view,
+                &graphics.ssao_uniform_buf,
             );
 
             if let Some(t) = &mut graphics.msaa_texture {

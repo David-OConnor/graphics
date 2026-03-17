@@ -15,7 +15,7 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use egui::Context;
-use lin_alg::f32::Vec3;
+use lin_alg::f32::{Mat4, Vec3};
 use wgpu::{
     self, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer, BufferBindingType,
     BufferUsages, CommandEncoder, CommandEncoderDescriptor, DepthStencilState, Device, Face,
@@ -154,6 +154,16 @@ pub(crate) struct GraphicsState {
     pub contour_uniform_buf: Buffer,
     pub depth_revealing: f32,
     pub intersection_revealing: f32,
+    /// 0.0 = SSAO disabled; > 0 enables the SSAO overlay.
+    pub ssao_strength: f32,
+    /// Full-screen SSAO overlay pipeline.
+    pipeline_ssao: RenderPipeline,
+    /// Bind-group layout for the SSAO pass (depth tex + uniform buf).
+    pub layout_ssao: wgpu::BindGroupLayout,
+    /// Bind group referencing depth_texture_contour and ssao_uniform_buf.
+    pub bind_group_ssao: wgpu::BindGroup,
+    /// Uniform buffer written every frame when SSAO is active.
+    pub ssao_uniform_buf: Buffer,
 }
 
 impl GraphicsState {
@@ -166,6 +176,7 @@ impl GraphicsState {
         halo_expansion: f32,
         depth_revealing: f32,
         intersection_revealing: f32,
+        ssao_strength: f32,
     ) -> Self {
         let vertex_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex buffer"),
@@ -401,6 +412,60 @@ impl GraphicsState {
         };
         // ── End contour ──────────────────────────────────────────────────────────────
 
+        // ── SSAO ─────────────────────────────────────────────────────────────────────
+        let shader_ssao = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("SSAO shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader_ssao.wgsl").into()),
+        });
+        let layout_ssao = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("SSAO bind group layout"),
+            entries: &[
+                // Binding 0: 1-sample depth texture from geometry prepass.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // Binding 1: SSAO uniform buffer.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(SSAO_UNIFORM_SIZE as u64),
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let ssao_uniform_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("SSAO uniform buffer"),
+            size: SSAO_UNIFORM_SIZE as wgpu::BufferAddress,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bind_group_ssao = create_ssao_bind_group(
+            device,
+            &layout_ssao,
+            &depth_texture_contour.view,
+            &ssao_uniform_buf,
+        );
+        let pipeline_ssao = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("SSAO pipeline layout"),
+                bind_group_layouts: &[&layout_ssao],
+                push_constant_ranges: &[],
+            });
+            create_ssao_pipeline(device, &layout, shader_ssao, surface_cfg)
+        };
+        // ── End SSAO ─────────────────────────────────────────────────────────────────
+
         // We initialize instances, the instance buffer and mesh mappings in `setup_entities`.
         // let instances = Vec::new();
         let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
@@ -508,6 +573,11 @@ impl GraphicsState {
             contour_uniform_buf,
             depth_revealing,
             intersection_revealing,
+            ssao_strength,
+            pipeline_ssao,
+            layout_ssao,
+            bind_group_ssao,
+            ssao_uniform_buf,
             depth_texture,
             // staging_belt: wgpu::util::StagingBelt::new(0x100),
             scene,
@@ -803,6 +873,23 @@ impl GraphicsState {
         queue.write_buffer(&self.lighting_buf, 0, &self.scene.lighting.to_bytes());
     }
 
+    /// Write SSAO uniform buffer from the current camera state.
+    pub(crate) fn update_ssao_uniforms(&self, queue: &Queue) {
+        let proj_view = self.scene.camera.proj_mat.clone() * self.scene.camera.view_mat();
+        let proj_view_inv = proj_view.inverse().unwrap_or_else(Mat4::new_identity);
+        let bytes = ssao_uniform_bytes(
+            &proj_view,
+            &proj_view_inv,
+            self.scene.camera.position,
+            self.scene.camera.near,
+            self.scene.camera.far,
+            0.5,   // world-space sample radius
+            0.025, // depth bias (prevents self-occlusion)
+            self.ssao_strength,
+        );
+        queue.write_buffer(&self.ssao_uniform_buf, 0, &bytes);
+    }
+
     fn setup_render_pass<'a>(
         &mut self,
         encoder: &'a mut CommandEncoder,
@@ -1039,9 +1126,12 @@ impl GraphicsState {
         // an error about an index being out of bounds.
         process_engine_updates(&updates_gui, self, device, queue);
 
-        // Contour depth prepass: render opaque geometry to the 1-sample contour depth texture.
+        // Geometry prepass: render opaque geometry into the 1-sample depth texture used
+        // by both contour lines and SSAO.
         let contours_active = self.depth_revealing > 0. || self.intersection_revealing > 0.;
-        if contours_active && self.instance_buf.size() > 0 {
+        let ssao_active = self.ssao_strength > 0.;
+        let prepass_active = contours_active || ssao_active;
+        if prepass_active && self.instance_buf.size() > 0 {
             let mut pre = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Contour depth prepass"),
                 color_attachments: &[],
@@ -1129,6 +1219,30 @@ impl GraphicsState {
             });
             overlay.set_pipeline(&self.pipeline_contour_overlay);
             overlay.set_bind_group(0, &self.bind_group_contour, &[]);
+            overlay.draw(0..3, 0..1); // full-screen triangle
+            drop(overlay);
+        }
+
+        // SSAO overlay: darken ambient-occluded areas via multiplicative blend.
+        if ssao_active {
+            self.update_ssao_uniforms(queue);
+            let mut overlay = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("SSAO overlay"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: output_texture,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load, // preserve the rendered scene
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            overlay.set_pipeline(&self.pipeline_ssao);
+            overlay.set_bind_group(0, &self.bind_group_ssao, &[]);
             overlay.draw(0..3, 0..1); // full-screen triangle
             drop(overlay);
         }
@@ -1383,6 +1497,125 @@ pub(crate) fn create_contour_bind_group(
         ],
     })
 }
+
+// ── SSAO helpers ─────────────────────────────────────────────────────────────
+
+/// Size of the SsaoUniforms struct as laid out in shader_ssao.wgsl (std140).
+/// Layout: proj_view (64) + proj_view_inv (64) + cam_pos (16) + 8×f32 (32) = 176 bytes.
+pub(crate) const SSAO_UNIFORM_SIZE: usize = 176;
+
+/// Build the raw bytes for the SSAO uniform buffer.
+pub(crate) fn ssao_uniform_bytes(
+    proj_view: &Mat4,
+    proj_view_inv: &Mat4,
+    cam_pos: Vec3,
+    near: f32,
+    far: f32,
+    radius: f32,
+    bias: f32,
+    strength: f32,
+) -> [u8; SSAO_UNIFORM_SIZE] {
+    let mut b = [0u8; SSAO_UNIFORM_SIZE];
+    b[0..64].copy_from_slice(&proj_view.to_bytes());
+    b[64..128].copy_from_slice(&proj_view_inv.to_bytes());
+    // cam_pos as vec4 (w = 0)
+    b[128..132].copy_from_slice(&cam_pos.x.to_ne_bytes());
+    b[132..136].copy_from_slice(&cam_pos.y.to_ne_bytes());
+    b[136..140].copy_from_slice(&cam_pos.z.to_ne_bytes());
+    b[140..144].copy_from_slice(&0f32.to_ne_bytes());
+    b[144..148].copy_from_slice(&near.to_ne_bytes());
+    b[148..152].copy_from_slice(&far.to_ne_bytes());
+    b[152..156].copy_from_slice(&radius.to_ne_bytes());
+    b[156..160].copy_from_slice(&bias.to_ne_bytes());
+    b[160..164].copy_from_slice(&strength.to_ne_bytes());
+    // _pad0.._pad2 remain zero
+    b
+}
+
+pub(crate) fn create_ssao_bind_group(
+    device: &Device,
+    layout: &wgpu::BindGroupLayout,
+    depth_view: &TextureView,
+    uniform_buf: &Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("SSAO bind group"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(depth_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: uniform_buf.as_entire_binding(),
+            },
+        ],
+    })
+}
+
+/// Full-screen alpha-blended (multiplicative) pipeline for the SSAO overlay.
+fn create_ssao_pipeline(
+    device: &Device,
+    layout: &wgpu::PipelineLayout,
+    shader: wgpu::ShaderModule,
+    config: &SurfaceConfiguration,
+) -> RenderPipeline {
+    use wgpu::{BlendComponent, BlendFactor, BlendOperation};
+    // Multiplicative blend: scene_color * ao_factor.
+    // result = src * Zero + dst * SrcColor = dst * ao
+    let multiply_blend = BlendState {
+        color: BlendComponent {
+            src_factor: BlendFactor::Zero,
+            dst_factor: BlendFactor::Src,
+            operation: BlendOperation::Add,
+        },
+        alpha: BlendComponent {
+            src_factor: BlendFactor::Zero,
+            dst_factor: BlendFactor::One,
+            operation: BlendOperation::Add,
+        },
+    };
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("SSAO overlay pipeline"),
+        layout: Some(layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs_ssao"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs_ssao"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: config.format,
+                blend: Some(multiply_blend),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview: None,
+        cache: None,
+    })
+}
+
+// ── End SSAO helpers ──────────────────────────────────────────────────────────
 
 pub(crate) struct BindGroupData {
     pub layout_cam: BindGroupLayout,
