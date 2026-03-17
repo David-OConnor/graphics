@@ -62,6 +62,26 @@ impl GuiState {
         }
     }
 
+    /// Recreate the egui GPU renderer with a new MSAA sample count.
+    /// Called after an MSAA change; preserves the rest of the GUI state.
+    pub(crate) fn recreate_renderer(
+        &mut self,
+        device: &Device,
+        format: TextureFormat,
+        msaa_samples: u32,
+    ) {
+        self.egui_renderer = Renderer::new(
+            device,
+            format,
+            RendererOptions {
+                msaa_samples,
+                depth_stencil_format: Some(DEPTH_FORMAT),
+                dithering: false,
+                predictable_texture_filtering: false,
+            },
+        );
+    }
+
     /// This function contains code specific to rendering the GUI prior to the render pass.
     pub(crate) fn render_gui_pre_rpass<T>(
         &mut self,

@@ -22,7 +22,9 @@ use winit::{
 
 use crate::{
     EntityUpdate,
-    graphics::{GraphicsState, create_contour_bind_group, create_ssao_bind_group},
+    graphics::{
+        GraphicsState, contour_uniform_bytes, create_contour_bind_group, create_ssao_bind_group,
+    },
     gui::GuiState,
     texture::Texture,
     types::{AmbientOcclusion, EngineUpdates, GraphicsSettings, Scene, UiSettings},
@@ -225,11 +227,14 @@ where
             graphics.scene.window_size = (new_size.width as f32, new_size.height as f32);
             // graphics.scene.width_height = (new_size.width as f32, new_size.height as f32);
 
+            // Keep the cached surface config on GraphicsState in sync.
+            graphics.surface_cfg = sys.surface_cfg.clone();
+
             graphics.depth_texture = Texture::create_depth_texture(
                 &sys.device,
                 &sys.surface_cfg,
                 "Depth texture",
-                self.graphics_settings.msaa_samples,
+                graphics.msaa_samples,
             );
 
             graphics.depth_texture_contour = Texture::create_depth_texture(
@@ -255,7 +260,7 @@ where
                 *t = GraphicsState::create_msaa_texture(
                     &sys.device,
                     &sys.surface_cfg,
-                    self.graphics_settings.msaa_samples,
+                    graphics.msaa_samples,
                 );
             }
 
@@ -344,12 +349,12 @@ async fn setup_async(instance: &Instance, surface: &Surface<'static>) -> (Adapte
 
 /// Process engine updates from render, GUI, or events.
 pub(crate) fn process_engine_updates(
-    engine_updates: &EngineUpdates,
+    updates: &EngineUpdates,
     g_state: &mut GraphicsState,
     device: &Device,
     queue: &Queue,
 ) {
-    if engine_updates.meshes {
+    if updates.meshes {
         g_state.setup_vertices_indices(device);
         g_state.setup_entities(device);
     }
@@ -369,11 +374,11 @@ pub(crate) fn process_engine_updates(
     // }
 
     // todo: Temp marked all until we sort out how to do this properly.
-    match &engine_updates.entities {
+    match &updates.entities {
         EntityUpdate::None => (),
         EntityUpdate::All => g_state.setup_entities(device),
         // Classes, IDs, or indexes.
-        _ => g_state.replace_instance_entries(queue, device, &engine_updates.entities),
+        _ => g_state.replace_instance_entries(queue, device, &updates.entities),
         //
         // EntityUpdate::Classes(classes) => {
         //     if !classes.is_empty() {
@@ -392,13 +397,65 @@ pub(crate) fn process_engine_updates(
         // }
     }
 
-    if engine_updates.camera {
+    if updates.camera {
         // Entities have been updated in the scene; update the buffer.
         g_state.update_camera(queue);
     }
 
-    if engine_updates.lighting {
+    if updates.lighting {
         // Entities have been updated in the scene; update the buffer.
         g_state.update_lighting(queue);
+    }
+
+    if let Some(settings) = &updates.graphics_settings {
+        // ── Edge cueing ───────────────────────────────────────────────────────
+        let new_edge = settings.edge_cueing.unwrap_or(0.0);
+        if g_state.scene.camera.edge_cueing != new_edge {
+            g_state.scene.camera.edge_cueing = new_edge;
+            g_state.update_camera(queue);
+        }
+
+        // ── Depth-aware halos ─────────────────────────────────────────────────
+        let new_halo = settings.depth_aware_halos.unwrap_or(0.0);
+        if g_state.halo_expansion != new_halo {
+            g_state.halo_expansion = new_halo;
+            // update_camera writes the halo camera buffer when halo_expansion > 0.
+            g_state.update_camera(queue);
+        }
+
+        // ── Contour lines ─────────────────────────────────────────────────────
+        let new_depth_rev = settings.depth_revealing_contour_lines.unwrap_or(0.0);
+        let new_isect_rev = settings.intersection_revealing_contour_lines.unwrap_or(0.0);
+        if g_state.depth_revealing != new_depth_rev
+            || g_state.intersection_revealing != new_isect_rev
+        {
+            g_state.depth_revealing = new_depth_rev;
+            g_state.intersection_revealing = new_isect_rev;
+            queue.write_buffer(
+                &g_state.contour_uniform_buf,
+                0,
+                &contour_uniform_bytes(
+                    0.1,
+                    new_depth_rev,
+                    new_isect_rev,
+                    g_state.scene.camera.near,
+                    g_state.scene.camera.far,
+                ),
+            );
+        }
+
+        // ── Ambient occlusion (SSAO) ──────────────────────────────────────────
+        let new_ssao = match settings.ambient_occlusion {
+            AmbientOcclusion::Ssao => 1.5,
+            _ => 0.0,
+        };
+        g_state.ssao_strength = new_ssao;
+
+        // ── MSAA ──────────────────────────────────────────────────────────────
+        // Pipeline + GUI renderer recreation requires access to GuiState, so we
+        // just flag it here; window.rs::redraw() will apply it after the frame.
+        if settings.msaa_samples != g_state.msaa_samples {
+            g_state.pending_msaa = Some(settings.msaa_samples);
+        }
     }
 }

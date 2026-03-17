@@ -602,12 +602,12 @@ impl Default for UiSettings {
 #[derive(Default)]
 pub struct EngineUpdates {
     pub meshes: bool,
-    // pub entities: bool,
     pub entities: EntityUpdate,
     pub camera: bool,
     pub lighting: bool,
     /// X, Y. Reported by the UI, e.g. from SidePanel.response.rect.width()
     /// and TopBottomPanel.response.rect.heigh() etc.
     pub ui_reserved_px: (f32, f32),
-    // pub ui_scene_rect: Option<egui::Rect>,
+    /// For updating graphics settings (MSAA etc) from the application.
+    pub graphics_settings: Option<GraphicsSettings>,
 }

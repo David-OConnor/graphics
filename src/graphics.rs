@@ -156,6 +156,17 @@ pub(crate) struct GraphicsState {
     pub intersection_revealing: f32,
     /// 0.0 = SSAO disabled; > 0 enables the SSAO overlay.
     pub ssao_strength: f32,
+    /// Current MSAA sample count, kept in sync so resize and MSAA changes are consistent.
+    pub msaa_samples: u32,
+    /// When set, the event loop will recreate MSAA-dependent resources (pipelines, textures,
+    /// GUI renderer) before the next frame, then clear this field.
+    pub pending_msaa: Option<u32>,
+    /// Cached surface configuration — updated on resize, used for resource recreation.
+    pub surface_cfg: SurfaceConfiguration,
+    /// Stored mesh shader (needed to recreate MSAA-dependent pipelines without re-parsing).
+    shader_mesh: wgpu::ShaderModule,
+    /// Stored Gaussian shader (same reason).
+    shader_gauss: wgpu::ShaderModule,
     /// Full-screen SSAO overlay pipeline.
     pipeline_ssao: RenderPipeline,
     /// Bind-group layout for the SSAO pass (depth tex + uniform buf).
@@ -504,7 +515,7 @@ impl GraphicsState {
         let pipeline_gauss = create_render_pipeline(
             device,
             &pipeline_layout_gauss,
-            shader_gauss,
+            shader_gauss.clone(),
             surface_cfg,
             msaa_samples,
             &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
@@ -574,6 +585,11 @@ impl GraphicsState {
             depth_revealing,
             intersection_revealing,
             ssao_strength,
+            msaa_samples,
+            pending_msaa: None,
+            surface_cfg: surface_cfg.clone(),
+            shader_mesh,
+            shader_gauss,
             pipeline_ssao,
             layout_ssao,
             bind_group_ssao,
@@ -888,6 +904,121 @@ impl GraphicsState {
             self.ssao_strength,
         );
         queue.write_buffer(&self.ssao_uniform_buf, 0, &bytes);
+    }
+
+    /// Recreate all MSAA-dependent resources after a sample-count change.
+    /// Call this from the event loop (which also has access to GuiState for its renderer).
+    pub(crate) fn apply_msaa_change(&mut self, device: &Device) {
+        let new_msaa = self.msaa_samples;
+
+        self.depth_texture =
+            Texture::create_depth_texture(device, &self.surface_cfg, "Depth texture", new_msaa);
+        self.msaa_texture = if new_msaa > 1 {
+            Some(Self::create_msaa_texture(
+                device,
+                &self.surface_cfg,
+                new_msaa,
+            ))
+        } else {
+            None
+        };
+
+        let depth_stencil_mesh = DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        };
+
+        let pipeline_layout_mesh = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Render pipeline layout"),
+            bind_group_layouts: &[
+                &self.bind_groups.layout_cam,
+                &self.bind_groups.layout_lighting,
+            ],
+            push_constant_ranges: &[],
+        });
+
+        self.pipeline_mesh = create_render_pipeline(
+            device,
+            &pipeline_layout_mesh,
+            self.shader_mesh.clone(),
+            &self.surface_cfg,
+            new_msaa,
+            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            Some(depth_stencil_mesh.clone()),
+            None,
+            Some(Face::Back),
+            "Render pipeline mesh opaque",
+        );
+        self.pipeline_mesh_transparent = create_render_pipeline(
+            device,
+            &pipeline_layout_mesh,
+            self.shader_mesh.clone(),
+            &self.surface_cfg,
+            new_msaa,
+            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            Some(depth_stencil_mesh.clone()),
+            Some(BlendState::ALPHA_BLENDING),
+            Some(Face::Back),
+            "Render pipeline mesh transparent",
+        );
+        self.pipeline_mesh_transparent_back = create_render_pipeline(
+            device,
+            &pipeline_layout_mesh,
+            self.shader_mesh.clone(),
+            &self.surface_cfg,
+            new_msaa,
+            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            Some(depth_stencil_mesh.clone()),
+            Some(BlendState::ALPHA_BLENDING),
+            Some(Face::Front),
+            "Render pipeline mesh transparent – backfaces",
+        );
+
+        let pipeline_layout_halo = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Halo pipeline layout"),
+            bind_group_layouts: &[
+                &self.bind_groups.layout_cam,
+                &self.bind_groups.layout_lighting,
+            ],
+            push_constant_ranges: &[],
+        });
+        self.pipeline_halo = create_render_pipeline_depth_only(
+            device,
+            &pipeline_layout_halo,
+            self.shader_mesh.clone(),
+            new_msaa,
+            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            depth_stencil_mesh,
+        );
+
+        let depth_stencil_gauss = Some(DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: false,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        });
+        let pipeline_layout_gauss =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Gaussian pipeline layout"),
+                bind_group_layouts: &[&self.bind_groups.layout_cam_gauss],
+                push_constant_ranges: &[],
+            });
+        self.pipeline_gauss = create_render_pipeline(
+            device,
+            &pipeline_layout_gauss,
+            self.shader_gauss.clone(),
+            &self.surface_cfg,
+            new_msaa,
+            &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
+            depth_stencil_gauss,
+            Some(BlendState::ALPHA_BLENDING),
+            None,
+            "Render pipeline gaussian",
+        );
     }
 
     fn setup_render_pass<'a>(

@@ -92,6 +92,19 @@ where
                 if resize_required {
                     self.resize(sys.size);
                 }
+
+                // Apply any pending MSAA change (needs GuiState access, so done here).
+                // Extract what we need from sys before dropping the borrow.
+                let pending = self.graphics.as_mut().unwrap().pending_msaa.take();
+                if let Some(new_msaa) = pending {
+                    let device = &self.render.as_ref().unwrap().device;
+                    let surface_format = self.render.as_ref().unwrap().surface_cfg.format;
+                    let graphics = self.graphics.as_mut().unwrap();
+                    graphics.msaa_samples = new_msaa;
+                    graphics.apply_msaa_change(device);
+                    self.gui.as_mut().unwrap().recreate_renderer(device, surface_format, new_msaa);
+                    self.graphics_settings.msaa_samples = new_msaa;
+                }
             }
             // This occurs when minimized.
             Err(_e) => (),
