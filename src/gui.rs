@@ -11,7 +11,6 @@ use winit::window::Window;
 
 use crate::{
     graphics::GraphicsState,
-    system::DEPTH_FORMAT,
     types::{EngineUpdates, Scene},
 };
 
@@ -31,7 +30,7 @@ impl GuiState {
         window: Arc<Window>,
         device: &Device,
         texture_format: TextureFormat,
-        msaa_samples: u32,
+        _msaa_samples: u32,
     ) -> Self {
         let egui_context = Context::default();
         let egui_state = egui_winit::State::new(
@@ -43,12 +42,15 @@ impl GuiState {
             None,
         );
 
+        // The egui pass always runs at 1× MSAA in its own dedicated render
+        // pass after the 3D overlays, so it never needs to be recreated when
+        // the 3D MSAA level changes.
         let egui_renderer = Renderer::new(
             device,
             texture_format,
             RendererOptions {
-                msaa_samples,
-                depth_stencil_format: Some(DEPTH_FORMAT),
+                msaa_samples: 1,
+                depth_stencil_format: None,
                 dithering: false,
                 predictable_texture_filtering: false,
             },
@@ -60,26 +62,6 @@ impl GuiState {
             mouse_in_gui: false,
             size: (0., 0.),
         }
-    }
-
-    /// Recreate the egui GPU renderer with a new MSAA sample count.
-    /// Called after an MSAA change; preserves the rest of the GUI state.
-    pub(crate) fn recreate_renderer(
-        &mut self,
-        device: &Device,
-        format: TextureFormat,
-        msaa_samples: u32,
-    ) {
-        self.egui_renderer = Renderer::new(
-            device,
-            format,
-            RendererOptions {
-                msaa_samples,
-                depth_stencil_format: Some(DEPTH_FORMAT),
-                dithering: false,
-                predictable_texture_filtering: false,
-            },
-        );
     }
 
     /// This function contains code specific to rendering the GUI prior to the render pass.

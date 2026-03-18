@@ -353,5 +353,15 @@ entity.overlay_text = Some(TextOverlay {
 entity.class = mol.mol_type().entity_type() as u32;
 ```
 
+## Graphics settings.
+You can update graphics settings during application run by passing a `Some(GraphicsSettings)` value in `EngineUpdates::graphics_updates`. It defaults to None. You pass a new `GraphicsSettings` struct, and it updates settings immediately.
+
+Settings available. See the GraphicsSettings docs page for details:
+
+- MSAA
+- Ambient occlusion
+- Depth halos
+- Edge cueing
+
 
 ![Mol viewer screenshot](screenshots/mol_viewer_2025.png)

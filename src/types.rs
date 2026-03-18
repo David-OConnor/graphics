@@ -517,11 +517,14 @@ impl Default for InputSettings {
 
 /// Dims areas "inside" a model. Can make things look much better, more realistic,
 /// or help the viewer visually understand a 3d structure.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[cfg_attr(feature = "app_utils", derive(Encode, Decode))]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum AmbientOcclusion {
     None,
+    #[default]
     /// Screen-space
     Ssao,
+    // todo: Not implemented?
     /// Ground-truth AO. More accurate. Maybe slower or tougher to implement?
     Gtao,
 }

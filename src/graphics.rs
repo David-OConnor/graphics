@@ -41,8 +41,8 @@ use crate::{
     text_overlay::draw_text_overlay,
     texture::Texture,
     types::{
-        ControlScheme, EngineUpdates, INSTANCE_LAYOUT, INSTANCE_SIZE, InputSettings, Instance,
-        Scene, UiSettings, VERTEX_LAYOUT,
+        AmbientOcclusion, ControlScheme, EngineUpdates, GraphicsSettings, INSTANCE_LAYOUT,
+        INSTANCE_SIZE, InputSettings, Instance, Scene, UiSettings, VERTEX_LAYOUT,
     },
     viewport_rect,
 };
@@ -184,10 +184,6 @@ impl GraphicsState {
         mut scene: Scene,
         window: Arc<Window>,
         msaa_samples: u32,
-        halo_expansion: f32,
-        depth_revealing: f32,
-        intersection_revealing: f32,
-        ssao_strength: f32,
     ) -> Self {
         let vertex_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex buffer"),
@@ -239,15 +235,11 @@ impl GraphicsState {
 
         let bind_groups = create_bindgroups(device, &cam_buf, &cam_basis_buf, &lighting_buf);
 
-        // Halo prepass resources: a separate camera buffer with halo_expansion set.
-        let cam_halo_bytes = {
-            let mut halo_cam = scene.camera.clone();
-            halo_cam.halo_expansion = halo_expansion;
-            halo_cam.to_bytes()
-        };
+        // Halo prepass resources: a separate camera buffer (halo_expansion = 0 until
+        // apply_graphics_settings writes the real value).
         let cam_halo_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Camera halo buffer"),
-            contents: &cam_halo_bytes,
+            contents: &scene.camera.to_bytes(),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
         let bind_group_cam_halo = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -398,13 +390,7 @@ impl GraphicsState {
         });
         let contour_uniform_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Contour uniform buffer"),
-            contents: &contour_uniform_bytes(
-                0.1,
-                depth_revealing,
-                intersection_revealing,
-                scene.camera.near,
-                scene.camera.far,
-            ),
+            contents: &contour_uniform_bytes(0.1, 0., 0., scene.camera.near, scene.camera.far),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
         let bind_group_contour = create_contour_bind_group(
@@ -582,9 +568,9 @@ impl GraphicsState {
             bind_group_contour,
             layout_contour,
             contour_uniform_buf,
-            depth_revealing,
-            intersection_revealing,
-            ssao_strength,
+            depth_revealing: 0.,
+            intersection_revealing: 0.,
+            ssao_strength: 0.,
             msaa_samples,
             pending_msaa: None,
             surface_cfg: surface_cfg.clone(),
@@ -602,7 +588,7 @@ impl GraphicsState {
             mesh_mappings_transparent,
             window,
             msaa_texture,
-            halo_expansion,
+            halo_expansion: 0.,
         };
 
         result.setup_vertices_indices(device);
@@ -900,10 +886,55 @@ impl GraphicsState {
             self.scene.camera.near,
             self.scene.camera.far,
             0.5,   // world-space sample radius
-            0.025, // depth bias (prevents self-occlusion)
+            0.001, // depth bias (prevents self-occlusion)
             self.ssao_strength,
         );
         queue.write_buffer(&self.ssao_uniform_buf, 0, &bytes);
+    }
+
+    /// Apply a complete `GraphicsSettings` snapshot to this state.
+    /// Shared by init (via `system.rs`) and runtime updates (via `process_engine_updates`).
+    /// MSAA is intentionally excluded – it requires pipeline recreation and is
+    /// handled separately via `pending_msaa` / `apply_msaa_change`.
+    pub(crate) fn apply_graphics_settings(&mut self, settings: &GraphicsSettings, queue: &Queue) {
+        // ── Edge cueing ───────────────────────────────────────────────────────
+        let new_edge = settings.edge_cueing.unwrap_or(0.0);
+        if self.scene.camera.edge_cueing != new_edge {
+            self.scene.camera.edge_cueing = new_edge;
+            self.update_camera(queue);
+        }
+
+        // ── Depth-aware halos ─────────────────────────────────────────────────
+        let new_halo = settings.depth_aware_halos.unwrap_or(0.0);
+        if self.halo_expansion != new_halo {
+            self.halo_expansion = new_halo;
+            self.update_camera(queue);
+        }
+
+        // ── Contour lines ─────────────────────────────────────────────────────
+        let new_depth_rev = settings.depth_revealing_contour_lines.unwrap_or(0.0);
+        let new_isect_rev = settings.intersection_revealing_contour_lines.unwrap_or(0.0);
+        if self.depth_revealing != new_depth_rev || self.intersection_revealing != new_isect_rev {
+            self.depth_revealing = new_depth_rev;
+            self.intersection_revealing = new_isect_rev;
+            queue.write_buffer(
+                &self.contour_uniform_buf,
+                0,
+                &contour_uniform_bytes(
+                    0.1,
+                    new_depth_rev,
+                    new_isect_rev,
+                    self.scene.camera.near,
+                    self.scene.camera.far,
+                ),
+            );
+        }
+
+        // ── Ambient occlusion (SSAO) ──────────────────────────────────────────
+        self.ssao_strength = match settings.ambient_occlusion {
+            AmbientOcclusion::Ssao => 1.5,
+            _ => 0.0,
+        };
     }
 
     /// Recreate all MSAA-dependent resources after a sample-count change.
@@ -1325,11 +1356,7 @@ impl GraphicsState {
             self.update_camera(queue);
         }
 
-        let mut rpass = rpass.forget_lifetime();
-
-        gui.egui_renderer
-            .render(&mut rpass, &tris, &screen_descriptor);
-        drop(rpass); // Ends the render pass.
+        drop(rpass); // End the 3D render pass (MSAA resolve happens here).
 
         // Contour overlay: alpha-blend dark lines on top of the resolved scene.
         if contours_active {
@@ -1376,6 +1403,31 @@ impl GraphicsState {
             overlay.set_bind_group(0, &self.bind_group_ssao, &[]);
             overlay.draw(0..3, 0..1); // full-screen triangle
             drop(overlay);
+        }
+
+        // Egui pass – runs after all overlays so scene effects never paint over
+        // the UI.  Always 1× MSAA so it never needs to be recreated when the
+        // 3D MSAA level changes.
+        {
+            let mut egui_pass = encoder
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("egui render pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: output_texture,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                })
+                .forget_lifetime();
+            gui.egui_renderer
+                .render(&mut egui_pass, &tris, &screen_descriptor);
         }
 
         for x in &gui_full_output.textures_delta.free {
