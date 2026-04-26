@@ -261,14 +261,14 @@ impl GraphicsState {
 
         let pipeline_layout_mesh = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render pipeline layout"),
-            bind_group_layouts: &[&bind_groups.layout_cam, &bind_groups.layout_lighting],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bind_groups.layout_cam), Some(&bind_groups.layout_lighting)],
+            immediate_size: 0,
         });
 
         let depth_stencil_mesh = DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         };
@@ -325,8 +325,8 @@ impl GraphicsState {
         // Only needs the camera bind group (no fragment stage → no lighting needed).
         let pipeline_layout_halo = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Halo pipeline layout"),
-            bind_group_layouts: &[&bind_groups.layout_cam, &bind_groups.layout_lighting],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bind_groups.layout_cam), Some(&bind_groups.layout_lighting)],
+            immediate_size: 0,
         });
         let pipeline_halo = create_render_pipeline_depth_only(
             device,
@@ -347,8 +347,8 @@ impl GraphicsState {
         let pipeline_contour_depth = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Contour depth prepass layout"),
-                bind_group_layouts: &[&bind_groups.layout_cam],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&bind_groups.layout_cam)],
+                immediate_size: 0,
             });
             create_contour_depth_pipeline(
                 device,
@@ -402,8 +402,8 @@ impl GraphicsState {
         let pipeline_contour_overlay = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Contour overlay pipeline layout"),
-                bind_group_layouts: &[&layout_contour],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&layout_contour)],
+                immediate_size: 0,
             });
             create_contour_overlay_pipeline(device, &layout, shader_contour, surface_cfg)
         };
@@ -456,8 +456,8 @@ impl GraphicsState {
         let pipeline_ssao = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("SSAO pipeline layout"),
-                bind_group_layouts: &[&layout_ssao],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&layout_ssao)],
+                immediate_size: 0,
             });
             create_ssao_pipeline(device, &layout, shader_ssao, surface_cfg)
         };
@@ -485,15 +485,15 @@ impl GraphicsState {
         let pipeline_layout_gauss =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Gaussian pipeline layout"),
-                bind_group_layouts: &[&bind_groups.layout_cam_gauss],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&bind_groups.layout_cam_gauss)],
+                immediate_size: 0,
             });
 
         let depth_stencil_gauss = Some(DepthStencilState {
             format: DEPTH_FORMAT,
             // Seems to be required to be false to prevent gaussians from popping in and out.
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::Less,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         });
@@ -956,8 +956,8 @@ impl GraphicsState {
 
         let depth_stencil_mesh = DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         };
@@ -965,10 +965,10 @@ impl GraphicsState {
         let pipeline_layout_mesh = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render pipeline layout"),
             bind_group_layouts: &[
-                &self.bind_groups.layout_cam,
-                &self.bind_groups.layout_lighting,
+                Some(&self.bind_groups.layout_cam),
+                Some(&self.bind_groups.layout_lighting),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         self.pipeline_mesh = create_render_pipeline(
@@ -1011,10 +1011,10 @@ impl GraphicsState {
         let pipeline_layout_halo = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Halo pipeline layout"),
             bind_group_layouts: &[
-                &self.bind_groups.layout_cam,
-                &self.bind_groups.layout_lighting,
+                Some(&self.bind_groups.layout_cam),
+                Some(&self.bind_groups.layout_lighting),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         self.pipeline_halo = create_render_pipeline_depth_only(
             device,
@@ -1027,16 +1027,16 @@ impl GraphicsState {
 
         let depth_stencil_gauss = Some(DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::Less,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         });
         let pipeline_layout_gauss =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Gaussian pipeline layout"),
-                bind_group_layouts: &[&self.bind_groups.layout_cam_gauss],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&self.bind_groups.layout_cam_gauss)],
+                immediate_size: 0,
             });
         self.pipeline_gauss = create_render_pipeline(
             device,
@@ -1106,6 +1106,7 @@ impl GraphicsState {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         rpass.set_viewport(x, y, eff_width, eff_height, 0., 1.);
@@ -1307,6 +1308,7 @@ impl GraphicsState {
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pre.set_pipeline(&self.pipeline_contour_depth);
             pre.set_bind_group(0, &self.bind_groups.cam, &[]);
@@ -1374,6 +1376,7 @@ impl GraphicsState {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             overlay.set_pipeline(&self.pipeline_contour_overlay);
             overlay.set_bind_group(0, &self.bind_group_contour, &[]);
@@ -1398,6 +1401,7 @@ impl GraphicsState {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             overlay.set_pipeline(&self.pipeline_ssao);
             overlay.set_bind_group(0, &self.bind_group_ssao, &[]);
@@ -1424,6 +1428,7 @@ impl GraphicsState {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 })
                 .forget_lifetime();
             gui.egui_renderer
@@ -1495,7 +1500,7 @@ fn create_render_pipeline(
         },
         // If the pipeline will be used with a multiview render pass, this
         // indicates how many array layers the attachments will have.
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }
@@ -1547,7 +1552,7 @@ fn create_render_pipeline_depth_only(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }
@@ -1578,8 +1583,8 @@ fn create_contour_depth_pipeline(
 ) -> RenderPipeline {
     let depth_stencil = DepthStencilState {
         format: DEPTH_FORMAT,
-        depth_write_enabled: true,
-        depth_compare: wgpu::CompareFunction::Less,
+        depth_write_enabled: Some(true),
+        depth_compare: Some(wgpu::CompareFunction::Less),
         stencil: wgpu::StencilState::default(),
         bias: wgpu::DepthBiasState::default(),
     };
@@ -1608,7 +1613,7 @@ fn create_contour_depth_pipeline(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }
@@ -1654,7 +1659,7 @@ fn create_contour_overlay_pipeline(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }
@@ -1793,7 +1798,7 @@ fn create_ssao_pipeline(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }

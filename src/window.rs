@@ -70,7 +70,8 @@ where
 
         // todo: move this into `render`?
         match sys.surface.get_current_texture() {
-            Ok(output_frame) => {
+            wgpu::CurrentSurfaceTexture::Success(output_frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(output_frame) => {
                 let surface_texture = output_frame
                     .texture
                     .create_view(&TextureViewDescriptor::default());
@@ -103,8 +104,8 @@ where
                     self.graphics_settings.msaa_samples = new_msaa;
                 }
             }
-            // This occurs when minimized.
-            Err(_e) => (),
+            // Timeout, Occluded, Outdated, Lost, or Validation — skip frame.
+            _ => (),
         }
     }
 }
