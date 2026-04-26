@@ -1227,7 +1227,7 @@ impl GraphicsState {
         width: u32,
         height: u32,
         ui_settings: &mut UiSettings,
-        gui_handler: impl FnMut(&mut T, &Ui, &mut Scene) -> EngineUpdates,
+        gui_handler: impl FnMut(&mut T, &mut Ui, &mut Scene) -> EngineUpdates,
         user_state: &mut T,
     ) -> bool {
         // Adjust camera inputs using the in-engine control scheme.

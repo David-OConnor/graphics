@@ -192,7 +192,7 @@ fn cam_controls(
 
 /// This function draws the (immediate-mode) GUI.
 /// [UI items](https://docs.rs/egui/latest/egui/struct.Ui.html#method.heading)
-pub fn ui_handler(state: &mut State, ui: &Ui, scene: &mut Scene) -> EngineUpdates {
+pub fn ui_handler(state: &mut State, ui: &mut Ui, scene: &mut Scene) -> EngineUpdates {
     let mut engine_updates = EngineUpdates::default();
 
     Panel::top("0").show_ijnside(ui, |ui| {

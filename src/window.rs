@@ -34,7 +34,7 @@ where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
     FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, bool, f32) -> EngineUpdates + 'static,
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
-    FGui: FnMut(&mut T, &egui::Ui, &mut Scene) -> EngineUpdates + 'static,
+    FGui: FnMut(&mut T, &mut egui::Ui, &mut Scene) -> EngineUpdates + 'static,
 {
     fn redraw(&mut self) {
         if self.paused || self.render.is_none() || self.graphics.is_none() {
@@ -116,7 +116,7 @@ where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
     FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, bool, f32) -> EngineUpdates + 'static,
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
-    FGui: FnMut(&mut T, &egui::Ui, &mut Scene) -> EngineUpdates + 'static,
+    FGui: FnMut(&mut T, &mut egui::Ui, &mut Scene) -> EngineUpdates + 'static,
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let icon = match self.ui_settings.icon_path {

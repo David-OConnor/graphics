@@ -71,7 +71,7 @@ impl GuiState {
         user_state: &mut T,
         device: &Device,
         // mut gui_handler: impl FnMut(&mut T, &Context, &mut Scene) -> EngineUpdates,
-        mut gui_handler: impl FnMut(&mut T, &Ui, &mut Scene) -> EngineUpdates,
+        mut gui_handler: impl FnMut(&mut T, &mut Ui, &mut Scene) -> EngineUpdates,
         encoder: &mut CommandEncoder,
         queue: &Queue,
         width: u32,
