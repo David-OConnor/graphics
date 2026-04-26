@@ -41,7 +41,7 @@ use graphics::{
     Camera, ControlScheme, DeviceEvent, EngineUpdates, Entity, InputSettings, LightType, Lighting,
     Mesh, PointLight, Scene, UiLayoutSides, UiLayoutTopBottom, UiSettings, GraphicsSettings, RIGHT_VEC, UP_VEC
 };
-use egui::{Context, Slider, TopBottomPanel};
+use egui::{Ui, Slider, Panel};
 
 use lin_alg::f32::{Quaternion, Vec3};
 
@@ -103,12 +103,12 @@ fn event_win_handler(
     _dt: f32,
 ) -> EngineUpdates {
     match event {
-        WindowEvent::CursorMoved {device_id, position} => {
+        WindowEvent::CursorMoved { device_id, position } => {
             state.ui.cursor_pos = Some((position.x as f32, position.y as f32))
         }
         _ => (),
     }
-    EngineUpdates::default() 
+    EngineUpdates::default()
 }
 
 /// This runs each frame.
@@ -179,12 +179,10 @@ fn cam_controls(
         ));
 
         if state_ui.view_depth != depth_prev {
-
             cam.far = state_ui.view_depth as f32;
             cam.update_proj_mat();
             changed = true;
         }
-
     });
 
     if changed {
@@ -194,10 +192,10 @@ fn cam_controls(
 
 /// This function draws the (immediate-mode) GUI.
 /// [UI items](https://docs.rs/egui/latest/egui/struct.Ui.html#method.heading)
-pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
+pub fn ui_handler(state: &mut State, ui: &Ui, scene: &mut Scene) -> EngineUpdates {
     let mut engine_updates = EngineUpdates::default();
 
-    TopBottomPanel::top("0").show(ctx, |ui| {
+    Panel::top("0").show_ijnside(ui, |ui| {
         ui.spacing_mut().slider_width = SLIDER_WIDTH;
 
         ui.horizontal(|ui| {
@@ -231,10 +229,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
 fn draw_entities(entities: &mut Vec<Entity>, snapshots: &[Snapshot]) {
     *entities = Vec::new();
-    
+
     // Note: If you associate a color with a `Vertex` in a `Mesh`, that will override 
     // entity color.
-    
+
     // Alternate way to construct: use its `Default` impl, overriding fields as required.
     entities.push(Entity::new(
         // manually set the `scale_partial` field with a `Vec3` if using non-uniform scaling. 

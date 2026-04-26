@@ -14,7 +14,7 @@
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use egui::Context;
+use egui::Ui;
 use lin_alg::f32::{Mat4, Vec3};
 use wgpu::{
     self, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer, BufferBindingType,
@@ -261,7 +261,10 @@ impl GraphicsState {
 
         let pipeline_layout_mesh = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render pipeline layout"),
-            bind_group_layouts: &[Some(&bind_groups.layout_cam), Some(&bind_groups.layout_lighting)],
+            bind_group_layouts: &[
+                Some(&bind_groups.layout_cam),
+                Some(&bind_groups.layout_lighting),
+            ],
             immediate_size: 0,
         });
 
@@ -325,7 +328,10 @@ impl GraphicsState {
         // Only needs the camera bind group (no fragment stage → no lighting needed).
         let pipeline_layout_halo = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Halo pipeline layout"),
-            bind_group_layouts: &[Some(&bind_groups.layout_cam), Some(&bind_groups.layout_lighting)],
+            bind_group_layouts: &[
+                Some(&bind_groups.layout_cam),
+                Some(&bind_groups.layout_lighting),
+            ],
             immediate_size: 0,
         });
         let pipeline_halo = create_render_pipeline_depth_only(
@@ -1221,7 +1227,7 @@ impl GraphicsState {
         width: u32,
         height: u32,
         ui_settings: &mut UiSettings,
-        gui_handler: impl FnMut(&mut T, &Context, &mut Scene) -> EngineUpdates,
+        gui_handler: impl FnMut(&mut T, &Ui, &mut Scene) -> EngineUpdates,
         user_state: &mut T,
     ) -> bool {
         // Adjust camera inputs using the in-engine control scheme.

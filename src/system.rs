@@ -47,7 +47,7 @@ where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
     FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, bool, f32) -> EngineUpdates + 'static,
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
-    FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
+    FGui: FnMut(&mut T, &egui::Ui, &mut Scene) -> EngineUpdates + 'static,
 {
     pub instance: Instance,
     /// `render` and `graphics`, and `gui` are only None at init; they require the `Window` event loop
@@ -74,7 +74,7 @@ where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
     FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, bool, f32) -> EngineUpdates + 'static,
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
-    FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
+    FGui: FnMut(&mut T, &egui::Ui, &mut Scene) -> EngineUpdates + 'static,
 {
     /// This constructor sets up the basics required for Winit's events loop. We initialize the important
     /// parts later, once the window has been set up.
@@ -279,7 +279,7 @@ pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
     FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, bool, f32) -> EngineUpdates + 'static,
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
-    FGui: FnMut(&mut T, &egui::Context, &mut Scene) -> EngineUpdates + 'static,
+    FGui: FnMut(&mut T, &egui::Ui, &mut Scene) -> EngineUpdates + 'static,
 {
     let (_frame_count, _accum_time) = (0, 0.0);
 

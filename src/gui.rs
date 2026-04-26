@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use egui::{ClippedPrimitive, Context, FullOutput};
+use egui::{ClippedPrimitive, Context, FullOutput, Ui};
 use egui_wgpu::{Renderer, RendererOptions, ScreenDescriptor};
 use wgpu::{self, CommandEncoder, Device, Queue, TextureFormat};
 use winit::window::Window;
@@ -70,7 +70,8 @@ impl GuiState {
         graphics: &mut GraphicsState,
         user_state: &mut T,
         device: &Device,
-        mut gui_handler: impl FnMut(&mut T, &Context, &mut Scene) -> EngineUpdates,
+        // mut gui_handler: impl FnMut(&mut T, &Context, &mut Scene) -> EngineUpdates,
+        mut gui_handler: impl FnMut(&mut T, &Ui, &mut Scene) -> EngineUpdates,
         encoder: &mut CommandEncoder,
         queue: &Queue,
         width: u32,
@@ -90,8 +91,9 @@ impl GuiState {
 
         let raw_input = self.egui_state.take_egui_input(&graphics.window);
 
-        let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
-            *updates_gui = gui_handler(user_state, ctx, &mut graphics.scene);
+        // let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
+        let full_output = self.egui_state.egui_ctx().run_ui(raw_input, |ui| {
+            *updates_gui = gui_handler(user_state, ui, &mut graphics.scene);
 
             let new_size = updates_gui.ui_reserved_px;
 
