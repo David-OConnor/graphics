@@ -61,7 +61,8 @@ impl Default for Lighting {
 impl Lighting {
     /// We use a vec due to the dynamic size of `point_lights`.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut result = Vec::new();
+        let mut result =
+            Vec::with_capacity(LIGHTING_SIZE_FIXED + self.point_lights.len() * POINT_LIGHT_SIZE);
 
         let mut buf_fixed_size = [0; LIGHTING_SIZE_FIXED];
         let mut i = 0;
@@ -76,14 +77,10 @@ impl Lighting {
         copy_ne!(buf_fixed_size, self.point_lights.len() as i32, i..i + 4);
         // i += F32_SIZE; // i32
 
-        for byte in buf_fixed_size.into_iter() {
-            result.push(byte);
-        }
+        result.extend_from_slice(&buf_fixed_size);
 
         for light in &self.point_lights {
-            for byte in light.to_bytes().into_iter() {
-                result.push(byte)
-            }
+            result.extend_from_slice(&light.to_bytes());
         }
 
         result

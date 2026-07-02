@@ -173,7 +173,6 @@ where
 
         if !gui.mouse_in_gui {
             graphics.handle_input_window(&event, &self.scene.input_settings);
-            let _inputs_present = graphics.inputs_commanded.inputs_present();
 
             // Handle events processed by the application
             let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;

@@ -92,7 +92,7 @@ impl GuiState {
         let raw_input = self.egui_state.take_egui_input(&graphics.window);
 
         // let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
-        let full_output = self.egui_state.egui_ctx().run_ui(raw_input, |ui| {
+        let mut full_output = self.egui_state.egui_ctx().run_ui(raw_input, |ui| {
             *updates_gui = gui_handler(user_state, ui, &mut graphics.scene);
 
             let new_size = updates_gui.ui_reserved_px;
@@ -107,11 +107,15 @@ impl GuiState {
             }
         });
 
-        self.egui_state
-            .handle_platform_output(&graphics.window, full_output.platform_output.clone()); // todo: Is this clone OK?
+        // Take these fields rather than cloning them; the caller only needs
+        // `textures_delta` from the returned FullOutput.
+        self.egui_state.handle_platform_output(
+            &graphics.window,
+            std::mem::take(&mut full_output.platform_output),
+        );
 
         let tris = self.egui_state.egui_ctx().tessellate(
-            full_output.shapes.clone(), // todo: Is the clone OK?
+            std::mem::take(&mut full_output.shapes),
             self.egui_state.egui_ctx().pixels_per_point(),
         );
 

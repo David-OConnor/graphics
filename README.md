@@ -354,12 +354,16 @@ entity.class = mol.mol_type().entity_type() as u32;
 ## Graphics settings.
 You can update graphics settings during application run by passing a `Some(GraphicsSettings)` value in `EngineUpdates::graphics_updates`. It defaults to None. You pass a new `GraphicsSettings` struct, and it updates settings immediately.
 
-Settings available. See the GraphicsSettings docs page for details:
+Settings available. See the [GraphicsSettings docs page](https://docs.rs/graphics/latest/graphics/struct.GraphicsSettings.html) for details:
 
 - MSAA
 - Ambient occlusion
-- Depth halos
+- Self shadowing
 - Edge cueing
-
+- Depth-aware halos
+- Depth revealing contour lines
+- Intersection-revealing contour lines
+- A framerate counter.
+- 
 
 ![Mol viewer screenshot](screenshots/mol_viewer_2025.png)

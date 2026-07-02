@@ -31,18 +31,16 @@ use winit::{
 
 use crate::{
     camera::CAMERA_SIZE,
-    gauss::{
-        CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, GaussianInstance, QUAD_VERTEX_LAYOUT,
-        QUAD_VERTICES,
-    },
+    gauss::{CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT, QUAD_VERTICES},
     gui::GuiState,
     input::{self, InputsCommanded},
     system::{COLOR_FORMAT, DEPTH_FORMAT, process_engine_updates},
-    text_overlay::draw_text_overlay,
+    text_overlay::{draw_framerate, draw_text_overlay},
     texture::Texture,
     types::{
-        AmbientOcclusion, ControlScheme, EngineUpdates, GraphicsSettings, INSTANCE_LAYOUT,
-        INSTANCE_SIZE, InputSettings, Instance, Scene, UiSettings, VERTEX_LAYOUT,
+        AmbientOcclusion, ControlScheme, EngineUpdates, FramerateDisplay, GraphicsSettings,
+        INSTANCE_LAYOUT, INSTANCE_SIZE, InputSettings, Instance, Scene, UiSettings, VERTEX_LAYOUT,
+        VERTEX_SIZE,
     },
     viewport_rect,
 };
@@ -175,11 +173,25 @@ pub(crate) struct GraphicsState {
     pub bind_group_ssao: wgpu::BindGroup,
     /// Uniform buffer written every frame when SSAO is active.
     pub ssao_uniform_buf: Buffer,
+    /// Which corner (if any) to display the frame rate readout in.
+    pub framerate_display: FramerateDisplay,
+    /// The frame rate shown by the readout; averaged over `FPS_UPDATE_INTERVAL`.
+    /// 0 until the first measurement window completes.
+    pub fps_value: f32,
+    /// Time elapsed in the current frame rate measurement window, in seconds.
+    fps_accum_time: f32,
+    /// Frames counted in the current frame rate measurement window.
+    fps_accum_frames: u32,
 }
+
+/// How often the frame rate readout updates, in seconds. Averaging over this window
+/// keeps the displayed value steady enough to read.
+const FPS_UPDATE_INTERVAL: f32 = 0.25;
 
 impl GraphicsState {
     pub(crate) fn new(
         device: &Device,
+        queue: &Queue,
         surface_cfg: &SurfaceConfiguration,
         mut scene: Scene,
         window: Arc<Window>,
@@ -474,13 +486,13 @@ impl GraphicsState {
         let instance_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Instance buffer"),
             contents: &[], // empty on init
-            usage: BufferUsages::VERTEX,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
 
         let instance_buf_transparent = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Instance buffer transparent"),
             contents: &[], // empty on init
-            usage: BufferUsages::VERTEX,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
 
         let shader_gauss = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -533,7 +545,7 @@ impl GraphicsState {
         let instance_gauss_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Gaussian Instance buffer"),
             contents: &[], // empty on init
-            usage: BufferUsages::VERTEX,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
 
         // Placeholder value
@@ -595,10 +607,14 @@ impl GraphicsState {
             window,
             msaa_texture,
             halo_expansion: 0.,
+            framerate_display: Default::default(),
+            fps_value: 0.,
+            fps_accum_time: 0.,
+            fps_accum_frames: 0,
         };
 
         result.setup_vertices_indices(device);
-        result.setup_entities(device);
+        result.setup_entities(device, queue);
 
         result
     }
@@ -662,34 +678,25 @@ impl GraphicsState {
 
     /// Updates meshes.
     pub(crate) fn setup_vertices_indices(&mut self, device: &Device) {
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-
+        let mut n_vertices = 0;
+        let mut n_indices = 0;
         for mesh in &self.scene.meshes {
-            for vertex in &mesh.vertices {
-                vertices.push(vertex)
-            }
-
-            for index in &mesh.indices {
-                indices.push(index);
-            }
+            n_vertices += mesh.vertices.len();
+            n_indices += mesh.indices.len();
         }
 
         // Convert the vertex and index data to u8 buffers.
-        let mut vertex_data = Vec::new();
-        for vertex in vertices {
-            for byte in vertex.to_bytes() {
-                vertex_data.push(byte);
-            }
-        }
+        let mut vertex_data = Vec::with_capacity(n_vertices * VERTEX_SIZE);
+        let mut index_data = Vec::with_capacity(n_indices * 4);
 
-        let mut index_data = Vec::new();
-        for index in indices {
-            let bytes = index.to_ne_bytes();
-            index_data.push(bytes[0]);
-            index_data.push(bytes[1]);
-            index_data.push(bytes[2]);
-            index_data.push(bytes[3]);
+        for mesh in &self.scene.meshes {
+            for vertex in &mesh.vertices {
+                vertex_data.extend_from_slice(&vertex.to_bytes());
+            }
+
+            for index in &mesh.indices {
+                index_data.extend_from_slice(&(*index as u32).to_ne_bytes());
+            }
         }
 
         // We can't update using a queue due to buffer size mismatches.
@@ -732,6 +739,11 @@ impl GraphicsState {
             _ => &self.scene.entities,
         };
 
+        // Gather updates first, so contiguous slots can be coalesced into a single
+        // queue.write_buffer call each, rather than one call per entity.
+        let mut writes_opaque: Vec<(usize, [u8; INSTANCE_SIZE])> = Vec::new();
+        let mut writes_transparent: Vec<(usize, [u8; INSTANCE_SIZE])> = Vec::new();
+
         for ent in ents_to_update {
             match update_type {
                 EntityUpdate::Classes(_) => {
@@ -760,33 +772,72 @@ impl GraphicsState {
             }
 
             let instance: Instance = ent.into();
-            let bytes = instance.to_bytes();
-            let byte_offset = (slot * INSTANCE_SIZE) as u64;
-
             if ent.buf_is_transparent {
-                queue.write_buffer(&self.instance_buf_transparent, byte_offset, &bytes);
+                writes_transparent.push((slot, instance.to_bytes()));
             } else {
-                queue.write_buffer(&self.instance_buf, byte_offset, &bytes);
+                writes_opaque.push((slot, instance.to_bytes()));
             }
         }
 
         if needs_full_rebuild {
             // todo: Put back A/R to help diagnose problems.
             // println!("Performing a full entity rebuild; unable to update in-place");
-            self.setup_entities(device);
+            self.setup_entities(device, queue);
+            return;
+        }
+
+        for (buf, mut writes) in [
+            (&self.instance_buf, writes_opaque),
+            (&self.instance_buf_transparent, writes_transparent),
+        ] {
+            if writes.is_empty() {
+                continue;
+            }
+
+            // Slots are unique per entity, so sorting then merging adjacent runs writes
+            // the same bytes to the same offsets as individual writes would.
+            writes.sort_unstable_by_key(|(slot, _)| *slot);
+
+            let mut start = 0;
+            while start < writes.len() {
+                let mut end = start + 1;
+                while end < writes.len() && writes[end].0 == writes[end - 1].0 + 1 {
+                    end += 1;
+                }
+
+                let run = &writes[start..end];
+                let mut data = Vec::with_capacity(run.len() * INSTANCE_SIZE);
+                for (_, bytes) in run {
+                    data.extend_from_slice(bytes);
+                }
+                queue.write_buffer(buf, (run[0].0 * INSTANCE_SIZE) as u64, &data);
+
+                start = end;
+            }
         }
     }
 
     /// Sets up entities (And the associated instance buffer), but doesn't change
     /// meshes, lights, or the camera. The vertex and index buffers aren't changed; only the instances.
     /// This rebuilds the instance buffers from scratch from entities.
-    pub(crate) fn setup_entities(&mut self, device: &Device) {
-        let mut instances = Vec::new();
-        let mut instances_transparent: Vec<Instance> = Vec::new();
-        let mut instances_gauss = Vec::with_capacity(self.scene.gaussians.len());
+    pub(crate) fn setup_entities(&mut self, device: &Device, queue: &Queue) {
+        let scene = &mut self.scene;
+        let n_meshes = scene.meshes.len();
 
-        let mut mesh_mappings = Vec::new();
-        let mut mesh_mappings_transparent = Vec::new();
+        // Bucket entity indices by mesh in a single pass, instead of scanning every
+        // entity once per mesh.
+        let mut ents_by_mesh: Vec<Vec<usize>> = vec![Vec::new(); n_meshes];
+        for (i, entity) in scene.entities.iter().enumerate() {
+            if entity.mesh < n_meshes {
+                ents_by_mesh[entity.mesh].push(i);
+            }
+        }
+
+        let mut instance_data = Vec::new();
+        let mut instance_data_transparent = Vec::new();
+
+        let mut mesh_mappings = Vec::with_capacity(n_meshes);
+        let mut mesh_mappings_transparent = Vec::with_capacity(n_meshes);
 
         let mut vertex_start_this_mesh = 0;
 
@@ -797,15 +848,16 @@ impl GraphicsState {
         let mut i_transparent = 0;
 
         // Build mesh-based instances.
-        for (i, mesh) in self.scene.meshes.iter().enumerate() {
+        for (i, mesh) in scene.meshes.iter().enumerate() {
             let mut instance_count_this_mesh = 0;
             let mut instance_count_this_mesh_transparent = 0;
 
-            for entity in self.scene.entities.iter_mut().filter(|e| e.mesh == i) {
+            for &ent_i in &ents_by_mesh[i] {
+                let entity = &mut scene.entities[ent_i];
                 let instance: Instance = (&*entity).into();
 
                 if entity.opacity < 0.99 {
-                    instances_transparent.push(instance);
+                    instance_data_transparent.extend_from_slice(&instance.to_bytes());
                     instance_count_this_mesh_transparent += 1;
 
                     // For our in-place replacement system.
@@ -813,7 +865,7 @@ impl GraphicsState {
                     entity.buf_is_transparent = true;
                     i_transparent += 1;
                 } else {
-                    instances.push(instance);
+                    instance_data.extend_from_slice(&instance.to_bytes());
                     instance_count_this_mesh += 1;
 
                     entity.buf_i = Some(i_opaque);
@@ -843,19 +895,33 @@ impl GraphicsState {
         self.mesh_mappings = mesh_mappings;
         self.mesh_mappings_transparent = mesh_mappings_transparent;
 
-        // Build gaussian-based instances.
-        for gauss in &self.scene.gaussians {
-            instances_gauss.push(gauss.to_instance());
+        // Build gaussian-based instances. (48 bytes per serialized GaussianInstance.)
+        let mut instance_data_gauss = Vec::with_capacity(scene.gaussians.len() * 48);
+        for gauss in &scene.gaussians {
+            instance_data_gauss.extend_from_slice(&gauss.to_instance().to_bytes());
         }
 
-        self.instance_buf = setup_instance_buf(device, &instances, "Instance buffer");
-        self.instance_buf_transparent = setup_instance_buf(
+        upload_instance_data(
             device,
-            &instances_transparent,
+            queue,
+            &mut self.instance_buf,
+            &instance_data,
+            "Instance buffer",
+        );
+        upload_instance_data(
+            device,
+            queue,
+            &mut self.instance_buf_transparent,
+            &instance_data_transparent,
             "Instance buffer transparent",
         );
-        self.instance_buf_gauss =
-            setup_instance_buf_gauss(device, &instances_gauss, "Instance buffer Gaussian");
+        upload_instance_data(
+            device,
+            queue,
+            &mut self.instance_buf_gauss,
+            &instance_data_gauss,
+            "Instance buffer Gaussian",
+        );
     }
 
     pub(crate) fn update_camera(&mut self, queue: &Queue) {
@@ -941,6 +1007,15 @@ impl GraphicsState {
             AmbientOcclusion::Ssao => 1.5,
             _ => 0.0,
         };
+
+        // ── Frame rate display ────────────────────────────────────────────────
+        if self.framerate_display != settings.display_framerate {
+            self.framerate_display = settings.display_framerate;
+            // Restart the measurement window, so a stale value isn't shown on re-enable.
+            self.fps_value = 0.;
+            self.fps_accum_time = 0.;
+            self.fps_accum_frames = 0;
+        }
     }
 
     /// Recreate all MSAA-dependent resources after a sample-count change.
@@ -1230,6 +1305,19 @@ impl GraphicsState {
         gui_handler: impl FnMut(&mut T, &mut Ui, &mut Scene) -> EngineUpdates,
         user_state: &mut T,
     ) -> bool {
+        // Track the frame rate for the optional on-screen readout, averaging over
+        // a fixed window to keep the displayed value steady.
+        if self.framerate_display != FramerateDisplay::Disabled {
+            self.fps_accum_time += dt.as_secs() as f32 + dt.subsec_micros() as f32 / 1_000_000.;
+            self.fps_accum_frames += 1;
+
+            if self.fps_accum_time >= FPS_UPDATE_INTERVAL {
+                self.fps_value = self.fps_accum_frames as f32 / self.fps_accum_time;
+                self.fps_accum_time = 0.;
+                self.fps_accum_frames = 0;
+            }
+        }
+
         // Adjust camera inputs using the in-engine control scheme.
         // Note that camera settings adjusted by the application code are handled in
         // `update_camera`.
@@ -1288,6 +1376,7 @@ impl GraphicsState {
 
         // Draw text on the screen.
         draw_text_overlay(self, gui, ui_settings, width, height);
+        draw_framerate(self, gui, ui_settings, width, height);
 
         // Note: If we process engine updates after setting up the render pass, we will not be
         // able to add meshes at runtime; code run from the `engine_updates.meshes` flag must be
@@ -1987,40 +2076,20 @@ fn create_bindgroups(
     }
 }
 
-fn setup_instance_buf(device: &Device, instances: &[Instance], name: &str) -> Buffer {
-    let mut instance_data = Vec::with_capacity(instances.len() * INSTANCE_SIZE);
-
-    for instance in instances {
-        for byte in instance.to_bytes() {
-            instance_data.push(byte);
+/// Upload instance data, reusing the existing buffer via a queue write when the size is
+/// unchanged (the common case when entities update without being added or removed), and
+/// recreating the buffer only when the size differs.
+fn upload_instance_data(device: &Device, queue: &Queue, buf: &mut Buffer, data: &[u8], name: &str) {
+    if buf.size() == data.len() as u64 {
+        if !data.is_empty() {
+            queue.write_buffer(buf, 0, data);
         }
+    } else {
+        *buf = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some(name),
+            contents: data,
+            // COPY_DST allows us to copy updates into an existing buffer.
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        });
     }
-
-    // We can't update using a queue due to buffer size mismatches.
-    device.create_buffer_init(&BufferInitDescriptor {
-        label: Some(name),
-        contents: &instance_data,
-        // usage: BufferUsages::VERTEX,
-        // COPY_DST allows us to copy updates into an existing buffer.
-        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-    })
-}
-
-// todo: DRY due simply to the instance type being different.
-fn setup_instance_buf_gauss(device: &Device, instances: &[GaussianInstance], name: &str) -> Buffer {
-    let mut instance_data = Vec::with_capacity(instances.len() * INSTANCE_SIZE);
-
-    for instance in instances {
-        for byte in instance.to_bytes() {
-            instance_data.push(byte);
-        }
-    }
-
-    // We can't update using a queue due to buffer size mismatches.
-    device.create_buffer_init(&BufferInitDescriptor {
-        label: Some(name),
-        contents: &instance_data,
-        // usage: BufferUsages::VERTEX,
-        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-    })
 }

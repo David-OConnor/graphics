@@ -34,8 +34,9 @@ pub use lighting::{LightType, Lighting, PointLight};
 pub use system::run;
 pub use text_overlay::TextOverlay;
 pub use types::{
-    AmbientOcclusion, ControlScheme, EngineUpdates, Entity, GraphicsSettings, InputSettings, Mesh,
-    Scene, ScrollBehavior, UiLayoutSides, UiLayoutTopBottom, UiSettings, Vertex,
+    AmbientOcclusion, ControlScheme, EngineUpdates, Entity, FramerateDisplay, GraphicsSettings,
+    InputSettings, Mesh, Scene, ScrollBehavior, UiLayoutSides, UiLayoutTopBottom, UiSettings,
+    Vertex,
 };
 pub use window::viewport_rect;
 // Re-export winit DeviceEvents for use in the API; this prevents the calling

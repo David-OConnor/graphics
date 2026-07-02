@@ -169,6 +169,7 @@ where
 
         let mut graphics = GraphicsState::new(
             &render.device,
+            &render.queue,
             &render.surface_cfg,
             self.scene.clone(), // todo: Now we have two scene states... not good.
             window.clone(),
@@ -341,7 +342,7 @@ pub(crate) fn process_engine_updates(
 ) {
     if updates.meshes {
         g_state.setup_vertices_indices(device);
-        g_state.setup_entities(device);
+        g_state.setup_entities(device, queue);
     }
 
     // todo: Alternative structure: Have this function just be for the full replacement,
@@ -361,7 +362,7 @@ pub(crate) fn process_engine_updates(
     // todo: Temp marked all until we sort out how to do this properly.
     match &updates.entities {
         EntityUpdate::None => (),
-        EntityUpdate::All => g_state.setup_entities(device),
+        EntityUpdate::All => g_state.setup_entities(device, queue),
         // Classes, IDs, or indexes.
         _ => g_state.replace_instance_entries(queue, device, &updates.entities),
         //

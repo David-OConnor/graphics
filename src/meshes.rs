@@ -86,7 +86,7 @@ impl Mesh {
                 // the bottom and right edges.
                 // (grid.length is num_rows)
                 if i != points.len() - 1 && j != rows.len() - 1 {
-                    indices.append(&mut vec![
+                    indices.extend_from_slice(&[
                         this_vert_i,
                         this_vert_i + points.len(),
                         this_vert_i + 1,
@@ -96,7 +96,7 @@ impl Mesh {
                 // Lower triangle: This exists for every vertex except
                 // the top and left edges.
                 if i != 0 && j != 0 {
-                    indices.append(&mut vec![
+                    indices.extend_from_slice(&[
                         this_vert_i,
                         this_vert_i - points.len(),
                         this_vert_i - 1,
@@ -298,9 +298,9 @@ impl Mesh {
         // Faces connected to the bottom vertex.
         for k in 0..num_lons {
             if k == num_lons - 1 {
-                indices.append(&mut vec![0, k + 2 - num_lons, k + 1]);
+                indices.extend_from_slice(&[0, k + 2 - num_lons, k + 1]);
             } else {
-                indices.append(&mut vec![0, k + 2, k + 1]);
+                indices.extend_from_slice(&[0, k + 2, k + 1]);
             }
         }
 
@@ -351,9 +351,9 @@ impl Mesh {
 
         for k in 0..num_lons {
             if k == num_lons - 1 {
-                indices.append(&mut vec![current_i, top_ring_start_i + k, top_ring_start_i]);
+                indices.extend_from_slice(&[current_i, top_ring_start_i + k, top_ring_start_i]);
             } else {
-                indices.append(&mut vec![
+                indices.extend_from_slice(&[
                     current_i,
                     top_ring_start_i + k,
                     top_ring_start_i + k + 1,
@@ -362,7 +362,7 @@ impl Mesh {
         }
 
         for f in faces {
-            indices.append(&mut vec![f[0], f[1], f[2], f[0], f[2], f[3]]);
+            indices.extend_from_slice(&[f[0], f[1], f[2], f[0], f[2], f[3]]);
         }
 
         Self {
@@ -406,9 +406,9 @@ impl Mesh {
         for vert in &circle_vertices_inner {
             // The number of faces is the number of angles - 1.
             // Triangle 1: This top, this bottom, next top.
-            indices.append(&mut vec![i_vertex, i_vertex + 1, (i_vertex + 2) % mod_]);
+            indices.extend_from_slice(&[i_vertex, i_vertex + 1, (i_vertex + 2) % mod_]);
             // Triangle 2: This bottom, next bottom, next top.
-            indices.append(&mut vec![
+            indices.extend_from_slice(&[
                 // Note: Order swapped from outer.
                 i_vertex + 1,
                 (i_vertex + 2) % mod_,
@@ -434,9 +434,9 @@ impl Mesh {
         for vert in &circle_vertices_outer {
             // The number of faces is the number of angles - 1.
             // Triangle 1: This top, this bottom, next top.
-            indices.append(&mut vec![i_vertex, i_vertex + 1, (i_vertex + 2) % mod_]);
+            indices.extend_from_slice(&[i_vertex, i_vertex + 1, (i_vertex + 2) % mod_]);
             // Triangle 2: This bottom, next bottom, next top.
-            indices.append(&mut vec![
+            indices.extend_from_slice(&[
                 i_vertex + 1,
                 (i_vertex + 3) % mod_,
                 (i_vertex + 2) % mod_,
@@ -463,9 +463,9 @@ impl Mesh {
         // for (j, vert) in circle_vertices_inner.iter().enumerate() {
         //     // We need num_sides - 2 triangles using this anchor-vertex algorithm.
         //     if j != 0 && j != num_sides - 1 {
-        //         indices.append(&mut vec![top_anchor, i_vertex, i_vertex + 2]);
+        //         indices.extend_from_slice(&[top_anchor, i_vertex, i_vertex + 2]);
         //         // We need CCW triangles for both, so reverse order on the bottom face.
-        //         indices.append(&mut vec![bottom_anchor, i_vertex + 3, i_vertex + 1]);
+        //         indices.extend_from_slice(&[bottom_anchor, i_vertex + 3, i_vertex + 1]);
         //     }
         //
         //     // Top face
@@ -554,9 +554,7 @@ impl Mesh {
 
         let mut indices = Vec::new();
         for face in &faces {
-            indices.append(&mut vec![
-                face[0], face[1], face[2], face[0], face[2], face[3],
-            ]);
+            indices.extend_from_slice(&[face[0], face[1], face[2], face[0], face[2], face[3]]);
         }
 
         Self {
@@ -648,9 +646,9 @@ impl Mesh {
         for vert in &circle_vertices {
             // The number of faces is the number of angles - 1.
             // Triangle 1: This top, this bottom, next top.
-            indices.append(&mut vec![i_vertex, i_vertex + 1, (i_vertex + 2) % mod_]);
+            indices.extend_from_slice(&[i_vertex, i_vertex + 1, (i_vertex + 2) % mod_]);
             // Triangle 2: This bottom, next bottom, next top.
-            indices.append(&mut vec![
+            indices.extend_from_slice(&[
                 i_vertex + 1,
                 (i_vertex + 3) % mod_,
                 (i_vertex + 2) % mod_,
@@ -677,9 +675,9 @@ impl Mesh {
         for (j, vert) in circle_vertices.iter().enumerate() {
             // We need num_sides - 2 triangles using this anchor-vertex algorithm.
             if j != 0 && j != num_sides - 1 {
-                indices.append(&mut vec![top_anchor, i_vertex, i_vertex + 2]);
+                indices.extend_from_slice(&[top_anchor, i_vertex, i_vertex + 2]);
                 // We need CCW triangles for both, so reverse order on the bottom face.
-                indices.append(&mut vec![bottom_anchor, i_vertex + 3, i_vertex + 1]);
+                indices.extend_from_slice(&[bottom_anchor, i_vertex + 3, i_vertex + 1]);
             }
 
             // Top face
@@ -735,7 +733,7 @@ impl Mesh {
                 i_vertex + 1
             };
             // Triangle: This edge, next edge, central;
-            indices.append(&mut vec![i_vertex, next, tip]);
+            indices.extend_from_slice(&[i_vertex, next, tip]);
 
             vertices.push(Vertex::new(
                 [vert[0], -half_len, vert[1]],
@@ -750,7 +748,7 @@ impl Mesh {
         for (j, vert) in circle_vertices.iter().enumerate() {
             // We need num_sides - 2 triangles using this anchor-vertex algorithm.
             if j != 0 && j != num_sides - 1 {
-                indices.append(&mut vec![bottom_anchor, i_vertex + 1, i_vertex]);
+                indices.extend_from_slice(&[bottom_anchor, i_vertex + 1, i_vertex]);
             }
 
             vertices.push(Vertex::new([vert[0], -half_len, vert[1]], -UP_VEC));
@@ -771,8 +769,10 @@ impl Mesh {
 
         let tip = Self::new_pyramid(len * 0.5, radius * 3., num_sides);
 
-        let mut vertices = cylinder.vertices.clone();
-        let mut indices = cylinder.indices.clone();
+        let mut vertices = cylinder.vertices;
+        let mut indices = cylinder.indices;
+
+        let tip_start_index = indices.iter().max().copied().unwrap() + 1;
 
         for vertex in tip.vertices {
             vertices.push(Vertex {
@@ -784,9 +784,6 @@ impl Mesh {
                 ..vertex
             });
         }
-
-        let ci2 = cylinder.indices.clone();
-        let tip_start_index = ci2.iter().max().unwrap() + 1;
 
         for index in tip.indices {
             indices.push(index + tip_start_index);

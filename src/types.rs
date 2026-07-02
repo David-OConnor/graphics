@@ -529,6 +529,17 @@ pub enum AmbientOcclusion {
     Gtao,
 }
 
+/// Displays a frame rate (in frames-per-second) readout over the 3D display area.
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub enum FramerateDisplay {
+    #[default]
+    Disabled,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
 /// Settings that affect visual quality, and appearance. Most of These
 /// also impact performance. (i.e. frame rate)
 /// [Article with some details](https://vcg.isti.cnr.it/Publications/2006/TCM06/Tarini_FinalVersionElec.pdf)
@@ -548,6 +559,7 @@ pub struct GraphicsSettings {
     pub depth_revealing_contour_lines: Option<f32>,
     /// Contour lines with fixed opacity wherever depth jumps at all. None = off. Some(strength).
     pub intersection_revealing_contour_lines: Option<f32>,
+    pub display_framerate: FramerateDisplay,
 }
 
 impl Default for GraphicsSettings {
@@ -560,6 +572,7 @@ impl Default for GraphicsSettings {
             depth_aware_halos: None,
             depth_revealing_contour_lines: None,
             intersection_revealing_contour_lines: None,
+            display_framerate: Default::default(),
         }
     }
 }
