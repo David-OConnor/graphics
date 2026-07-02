@@ -17,7 +17,7 @@ license = "MIT"
 
 
 [dependencies]
-lin_alg = { version = "1.4.2", features = ["computer_graphics"] }
+lin_alg = { version = "1.4.3", features = ["computer_graphics"] }
 
 # 3D and graphics libraries. There is a degree of interdependence between them.
 wgpu = "29.0.1"
