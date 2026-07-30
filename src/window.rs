@@ -19,6 +19,17 @@ use crate::{
     system::{State, UserEvent, process_engine_updates},
 };
 
+const IDLE_WAKE_DT_MAX: Duration = Duration::from_nanos(16_666_667);
+const CONTINUOUS_DT_MAX: Duration = Duration::from_millis(100);
+
+fn frame_delta(elapsed: Duration, continuous_redraw: bool) -> Duration {
+    elapsed.min(if continuous_redraw {
+        CONTINUOUS_DT_MAX
+    } else {
+        IDLE_WAKE_DT_MAX
+    })
+}
+
 fn load_icon(path: &Path) -> Result<Icon, ImageError> {
     let (icon_rgba, icon_width, icon_height) = {
         let image = image::open(path)?.into_rgba8();
@@ -46,13 +57,10 @@ where
         let graphics = self.graphics.as_mut().unwrap();
 
         let now = Instant::now();
-        self.dt = now - self.last_render_time;
-
-        // Clamp, e.g. if the loop isn't running. (Maybe when minimized?)
-        if self.dt.as_secs() > 1 {
-            self.dt = Duration::from_secs(1);
-        }
-
+        self.dt = frame_delta(
+            now.saturating_duration_since(self.last_render_time),
+            self.continuous_redraw,
+        );
         self.last_render_time = now;
 
         let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;
@@ -239,7 +247,9 @@ where
                     .graphics
                     .as_ref()
                     .is_some_and(|graphics| graphics.inputs_commanded.inputs_present());
-                if !self.paused && (app_requested_redraw || engine_input_active) {
+                self.continuous_redraw =
+                    !self.paused && (app_requested_redraw || engine_input_active);
+                if self.continuous_redraw {
                     self.graphics.as_ref().unwrap().window.request_redraw();
                 }
             }
@@ -279,6 +289,7 @@ where
                     self.resize(physical_size);
                     self.last_render_time = Instant::now();
                     self.dt = Default::default();
+                    self.continuous_redraw = false;
                 }
 
                 // Prevents inadvertent mouse-click-activated free-look.
@@ -309,6 +320,7 @@ where
                 if !self.paused {
                     self.last_render_time = Instant::now();
                     self.dt = Default::default();
+                    self.continuous_redraw = false;
                 }
             }
             WindowEvent::Focused(focused) => {
@@ -319,6 +331,7 @@ where
                 if focused {
                     self.last_render_time = Instant::now();
                     self.dt = Default::default();
+                    self.continuous_redraw = false;
                 }
             }
             WindowEvent::CursorLeft { device_id: _ } => {

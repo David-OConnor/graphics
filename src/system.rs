@@ -70,6 +70,9 @@ where
     pub scene: Scene,
     pub last_render_time: Instant,
     pub dt: Duration,
+    /// Whether the previous frame requested an immediate successor. This distinguishes
+    /// a continuously-rendering sequence from the first frame after the event loop idles.
+    pub(crate) continuous_redraw: bool,
     /// Minimized, etc. Indicates not to redraw.
     pub paused: bool,
     pub(crate) event_proxy: EventLoopProxy<UserEvent>,
@@ -120,6 +123,7 @@ where
             scene,
             last_render_time,
             dt,
+            continuous_redraw: false,
             paused: false,
             event_proxy,
             next_repaint: None,
