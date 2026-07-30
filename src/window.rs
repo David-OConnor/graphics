@@ -10,13 +10,13 @@ use wgpu::TextureViewDescriptor;
 use winit::{
     application::ApplicationHandler,
     event::{DeviceEvent, DeviceId, WindowEvent},
-    event_loop::ActiveEventLoop,
+    event_loop::{ActiveEventLoop, ControlFlow},
     window::{Icon, WindowAttributes, WindowId},
 };
 
 use crate::{
     EngineUpdates, Scene, UiLayoutSides, UiLayoutTopBottom, UiSettings,
-    system::{State, process_engine_updates},
+    system::{State, UserEvent, process_engine_updates},
 };
 
 fn load_icon(path: &Path) -> Result<Icon, ImageError> {
@@ -36,10 +36,11 @@ where
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &mut egui::Ui, &mut Scene) -> EngineUpdates + 'static,
 {
-    fn redraw(&mut self) {
+    fn redraw(&mut self) -> bool {
         if self.paused || self.render.is_none() || self.graphics.is_none() {
-            return;
+            return false;
         }
+        self.next_repaint = None;
 
         let sys = self.render.as_ref().unwrap();
         let graphics = self.graphics.as_mut().unwrap();
@@ -57,6 +58,7 @@ where
         let dt_secs = self.dt.as_secs() as f32 + self.dt.subsec_micros() as f32 / 1_000_000.;
         let updates_render =
             (self.render_handler)(&mut self.user_state, &mut graphics.scene, dt_secs);
+        let mut request_redraw = updates_render.request_redraw;
 
         process_engine_updates(
             &updates_render,
@@ -76,7 +78,7 @@ where
                     .texture
                     .create_view(&TextureViewDescriptor::default());
 
-                let resize_required = graphics.render(
+                let (resize_required, gui_request_redraw) = graphics.render(
                     self.gui.as_mut().unwrap(),
                     output_frame,
                     &surface_texture,
@@ -89,6 +91,7 @@ where
                     &mut self.gui_handler,
                     &mut self.user_state,
                 );
+                request_redraw |= gui_request_redraw;
 
                 if resize_required {
                     self.resize(sys.size);
@@ -107,10 +110,43 @@ where
             // Timeout, Occluded, Outdated, Lost, or Validation — skip frame.
             _ => (),
         }
+
+        request_redraw
+    }
+
+    fn schedule_repaint(&mut self, repaint_at: Instant) {
+        if self
+            .next_repaint
+            .is_none_or(|scheduled| repaint_at < scheduled)
+        {
+            self.next_repaint = Some(repaint_at);
+        }
+    }
+
+    fn update_repaint_deadline(&mut self, event_loop: &ActiveEventLoop) {
+        if self.paused {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        }
+
+        let Some(repaint_at) = self.next_repaint else {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        };
+
+        if repaint_at <= Instant::now() {
+            self.next_repaint = None;
+            if let Some(graphics) = &self.graphics {
+                graphics.window.request_redraw();
+            }
+            event_loop.set_control_flow(ControlFlow::Wait);
+        } else {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(repaint_at));
+        }
     }
 }
 
-impl<T, FRender, FEventDev, FEventWin, FGui> ApplicationHandler
+impl<T, FRender, FEventDev, FEventWin, FGui> ApplicationHandler<UserEvent>
     for State<T, FRender, FEventDev, FEventWin, FGui>
 where
     FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
@@ -155,6 +191,7 @@ where
         let window = event_loop.create_window(attributes).unwrap();
 
         self.init(window);
+        self.graphics.as_ref().unwrap().window.request_redraw();
     }
 
     fn window_event(
@@ -168,6 +205,10 @@ where
             return;
         }
 
+        let redraw_for_event = !matches!(
+            event,
+            WindowEvent::RedrawRequested | WindowEvent::CloseRequested
+        );
         let graphics = &mut self.graphics.as_mut().unwrap();
         let gui = &mut self.gui.as_mut().unwrap();
 
@@ -193,11 +234,14 @@ where
         // Handle events processed by this engine.
         match event {
             WindowEvent::RedrawRequested => {
-                self.redraw();
-
-                // todo: Only request the window redraw when required from an event etc. Will be
-                // todo much more efficient this way.
-                self.graphics.as_ref().unwrap().window.request_redraw();
+                let app_requested_redraw = self.redraw();
+                let engine_input_active = self
+                    .graphics
+                    .as_ref()
+                    .is_some_and(|graphics| graphics.inputs_commanded.inputs_present());
+                if !self.paused && (app_requested_redraw || engine_input_active) {
+                    self.graphics.as_ref().unwrap().window.request_redraw();
+                }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let in_ui_horizontal = match self.ui_settings.layout_sides {
@@ -294,6 +338,10 @@ where
             }
             _ => {}
         }
+
+        if redraw_for_event && !self.paused {
+            self.graphics.as_ref().unwrap().window.request_redraw();
+        }
     }
 
     fn device_event(
@@ -327,9 +375,22 @@ where
 
             process_engine_updates(&updates_event, graphics, &render.device, &render.queue);
         }
+
+        if !self.paused {
+            self.graphics.as_ref().unwrap().window.request_redraw();
+        }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {}
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+        match event {
+            UserEvent::RequestRedraw(repaint_at) => self.schedule_repaint(repaint_at),
+        }
+        self.update_repaint_deadline(event_loop);
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.update_repaint_deadline(event_loop);
+    }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {}
 }

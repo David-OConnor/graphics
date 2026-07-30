@@ -1,6 +1,6 @@
 [package]
 name = "graphics"
-version = "0.6.0"
+version = "0.6.1"
 authors = ["David O'Connor <the_alchemist@fastmail.com>"]
 description = "A 3D rendering engine for rust programs, with GUI integration"
 edition = "2024"
@@ -27,7 +27,7 @@ egui-wgpu = "0.34.1"
 egui-winit = "0.34.1"
 
 pollster = "0.4.0"  # For 2 WGPU init fns that use async.
-image = "0.25.2" # For loading textures
+image = "0.25.10" # For loading textures
 obj = "0.10.2"  # For loading OBJ meshes.
 bincode = { version = "2.0.1", optional = true } # For our save/load util.
 

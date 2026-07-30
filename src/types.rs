@@ -621,6 +621,9 @@ pub struct EngineUpdates {
     pub entities: EntityUpdate,
     pub camera: bool,
     pub lighting: bool,
+    /// Request another frame after the current one. Use this for application-side animation or
+    /// computation that must continue without a new window or input event.
+    pub request_redraw: bool,
     /// X, Y. Reported by the UI, e.g. from SidePanel.response.rect.width()
     /// and TopBottomPanel.response.rect.heigh() etc.
     pub ui_reserved_px: (f32, f32),

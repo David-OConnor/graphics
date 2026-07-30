@@ -1304,7 +1304,7 @@ impl GraphicsState {
         ui_settings: &mut UiSettings,
         gui_handler: impl FnMut(&mut T, &mut Ui, &mut Scene) -> EngineUpdates,
         user_state: &mut T,
-    ) -> bool {
+    ) -> (bool, bool) {
         // Track the frame rate for the optional on-screen readout, averaging over
         // a fixed window to keep the displayed value steady.
         if self.framerate_display != FramerateDisplay::Disabled {
@@ -1383,6 +1383,7 @@ impl GraphicsState {
         // done along with a mesh change prior to setting up the render pass, or else we will get
         // an error about an index being out of bounds.
         process_engine_updates(&updates_gui, self, device, queue);
+        let request_redraw = updates_gui.request_redraw;
 
         // Geometry prepass: render opaque geometry into the 1-sample depth texture used
         // by both contour lines and SSAO.
@@ -1538,7 +1539,7 @@ impl GraphicsState {
 
         surface_texture.present();
 
-        resize_required
+        (resize_required, request_redraw)
     }
 }
 

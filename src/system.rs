@@ -16,7 +16,7 @@ use wgpu::{
 use winit::{
     dpi::PhysicalSize,
     event::{DeviceEvent, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::{ControlFlow, EventLoop, EventLoopProxy},
     window::Window,
 };
 
@@ -30,6 +30,11 @@ use crate::{
 
 pub const COLOR_FORMAT: TextureFormat = TextureFormat::Bgra8UnormSrgb;
 pub const DEPTH_FORMAT: TextureFormat = TextureFormat::Depth32Float;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum UserEvent {
+    RequestRedraw(Instant),
+}
 
 /// This struct contains state related to the 3D graphics. It is mostly constructed of types
 /// that are required by  the WGPU renderer.
@@ -67,6 +72,8 @@ where
     pub dt: Duration,
     /// Minimized, etc. Indicates not to redraw.
     pub paused: bool,
+    pub(crate) event_proxy: EventLoopProxy<UserEvent>,
+    pub(crate) next_repaint: Option<Instant>,
 }
 
 impl<T: 'static, FRender, FEventDev, FEventWin, FGui> State<T, FRender, FEventDev, FEventWin, FGui>
@@ -87,6 +94,7 @@ where
         event_dev_handler: FEventDev,
         event_win_handler: FEventWin,
         gui_handler: FGui,
+        event_proxy: EventLoopProxy<UserEvent>,
     ) -> Self {
         let last_render_time = Instant::now();
         let dt = Duration::new(0, 0);
@@ -113,6 +121,8 @@ where
             last_render_time,
             dt,
             paused: false,
+            event_proxy,
+            next_repaint: None,
         }
     }
 
@@ -177,12 +187,21 @@ where
         );
         graphics.apply_graphics_settings(&self.graphics_settings, &render.queue);
 
-        self.gui = Some(GuiState::new(
+        let gui = GuiState::new(
             window,
             &render.device,
             texture_format,
             self.graphics_settings.msaa_samples,
-        ));
+        );
+        let event_proxy = self.event_proxy.clone();
+        gui.egui_state
+            .egui_ctx()
+            .set_request_repaint_callback(move |info| {
+                if let Some(repaint_at) = Instant::now().checked_add(info.delay) {
+                    let _ = event_proxy.send_event(UserEvent::RequestRedraw(repaint_at));
+                }
+            });
+        self.gui = Some(gui);
 
         self.render = Some(render);
         self.graphics = Some(graphics);
@@ -284,6 +303,9 @@ pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
 {
     let (_frame_count, _accum_time) = (0, 0.0);
 
+    let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
+    let event_proxy = event_loop.create_proxy();
+
     let mut state: State<T, FRender, FEventDev, FEventWin, FGui> = State::new(
         scene,
         ui_settings,
@@ -293,10 +315,10 @@ pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
         event_dev_handler,
         event_win_handler,
         gui_handler,
+        event_proxy,
     );
 
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Poll);
+    event_loop.set_control_flow(ControlFlow::Wait);
 
     event_loop.run_app(&mut state).expect("Failed to run app");
 }
