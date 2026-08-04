@@ -50,9 +50,9 @@ pub(crate) fn draw_text_overlay(
         return;
     }
 
-    // Paint in the foreground layer
+    // Keep entity labels above the 3D render pass, but below egui windows and popups.
     let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
+        egui::Order::Background,
         egui::Id::new("entity_labels"),
     ));
     for (pos, overlay) in labels {
