@@ -5,3 +5,6 @@ Cargo.lock
 .idea
 
 fonts/
+
+
+.claude/
