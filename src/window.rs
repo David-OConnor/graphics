@@ -1,6 +1,7 @@
 //! Handles window initialization and events, using Winit.
 
 use std::{
+    fs,
     path::Path,
     time::{Duration, Instant},
 };
@@ -405,7 +406,30 @@ where
         self.update_repaint_deadline(event_loop);
     }
 
-    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {}
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        let cache_data = self
+            .graphics
+            .as_ref()
+            .and_then(|graphics| graphics.pipeline_cache.as_ref())
+            .and_then(wgpu::PipelineCache::get_data);
+        let cache_path = self
+            .render
+            .as_ref()
+            .and_then(|render| render.pipeline_cache_path.as_ref());
+
+        if let (Some(data), Some(path)) = (cache_data, cache_path) {
+            let temp_path = path.with_extension("tmp");
+            let result = fs::write(&temp_path, data).and_then(|()| {
+                if path.exists() {
+                    fs::remove_file(path)?;
+                }
+                fs::rename(temp_path, path)
+            });
+            if let Err(error) = result {
+                eprintln!("Unable to save graphics pipeline cache: {error}");
+            }
+        }
+    }
 }
 
 /// Used in render, the text display pipeline, and may be used by applications, e.g. in mapping

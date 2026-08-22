@@ -1,5 +1,7 @@
 //! https://sotrh.github.io/learn-wgpu/beginner/tutorial9-models/#rendering-a-mesh
 
+use std::path::PathBuf;
+
 #[cfg(feature = "app_utils")]
 use bincode::{Decode, Encode};
 use lin_alg::f32::{Mat4, Quaternion, Vec3, Vec4};
@@ -596,6 +598,9 @@ pub struct UiSettings {
     pub layout_sides: UiLayoutSides,
     pub layout_top_bottom: UiLayoutTopBottom,
     pub icon_path: Option<String>,
+    /// Optional application-owned directory for a persistent wgpu pipeline cache. Vulkan shader
+    /// compilation is reused across launches when the adapter supports this feature.
+    pub pipeline_cache_dir: Option<PathBuf>,
 }
 
 impl Default for UiSettings {
@@ -604,6 +609,7 @@ impl Default for UiSettings {
             layout_sides: UiLayoutSides::Left,
             layout_top_bottom: UiLayoutTopBottom::Top,
             icon_path: None,
+            pipeline_cache_dir: None,
         }
     }
 }

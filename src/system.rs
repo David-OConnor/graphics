@@ -5,13 +5,16 @@
 // https://github.com/kaphula/winit-egui-wgpu-template/blob/master/src/main.rs
 
 use std::{
+    fs,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use wgpu::{
     Adapter, Backends, Device, ExperimentalFeatures, Features, Instance, InstanceDescriptor,
-    PowerPreference, Queue, Surface, SurfaceConfiguration, TextureFormat,
+    PipelineCache, PipelineCacheDescriptor, PowerPreference, Queue, Surface, SurfaceConfiguration,
+    TextureFormat,
 };
 use winit::{
     dpi::PhysicalSize,
@@ -45,6 +48,7 @@ pub(crate) struct RenderState {
     pub device: Device,
     pub queue: Queue,
     pub surface_cfg: SurfaceConfiguration,
+    pub pipeline_cache_path: Option<PathBuf>,
 }
 
 pub struct State<T: 'static, FRender, FEventDev, FEventWin, FGui>
@@ -138,7 +142,12 @@ where
 
         let surface = self.instance.create_surface(window.clone()).unwrap();
 
-        let (_adapter, device, queue) = pollster::block_on(setup_async(&self.instance, &surface));
+        let (adapter, device, queue) = pollster::block_on(setup_async(&self.instance, &surface));
+        let (pipeline_cache, pipeline_cache_path) = create_pipeline_cache(
+            &adapter,
+            &device,
+            self.ui_settings.pipeline_cache_dir.as_deref(),
+        );
 
         // The surface is the part of the window that we draw to. We need it to draw directly to the
         // screen. Our window needs to implement raw-window-handle (opens new window)'s
@@ -173,6 +182,7 @@ where
             device,
             queue,
             surface_cfg,
+            pipeline_cache_path,
         };
 
         // Sync edge cueing into the camera before cloning into GraphicsState,
@@ -181,15 +191,31 @@ where
             self.scene.camera.edge_cueing = strength;
         }
 
+        let renderer_scene = Scene {
+            // These collections can become large. Move them rather than cloning all mesh vertices
+            // and entity data into the renderer.
+            meshes: std::mem::take(&mut self.scene.meshes),
+            gaussians: std::mem::take(&mut self.scene.gaussians),
+            entities: std::mem::take(&mut self.scene.entities),
+            camera: self.scene.camera.clone(),
+            lighting: self.scene.lighting.clone(),
+            input_settings: self.scene.input_settings.clone(),
+            background_color: self.scene.background_color,
+            window_title: self.scene.window_title.clone(),
+            window_size: self.scene.window_size,
+            gui_size: self.scene.gui_size,
+        };
+
         let mut graphics = GraphicsState::new(
             &render.device,
             &render.queue,
             &render.surface_cfg,
-            self.scene.clone(), // todo: Now we have two scene states... not good.
+            renderer_scene,
             window.clone(),
             self.graphics_settings.msaa_samples,
+            pipeline_cache,
         );
-        graphics.apply_graphics_settings(&self.graphics_settings, &render.queue);
+        graphics.apply_graphics_settings(&self.graphics_settings, &render.device, &render.queue);
 
         let gui = GuiState::new(
             window,
@@ -281,6 +307,40 @@ where
     }
 }
 
+fn create_pipeline_cache(
+    adapter: &Adapter,
+    device: &Device,
+    cache_dir: Option<&Path>,
+) -> (Option<PipelineCache>, Option<PathBuf>) {
+    if !device.features().contains(Features::PIPELINE_CACHE) {
+        return (None, None);
+    }
+    let Some(cache_dir) = cache_dir else {
+        return (None, None);
+    };
+    let Some(key) = wgpu::util::pipeline_cache_key(&adapter.get_info()) else {
+        return (None, None);
+    };
+
+    if let Err(error) = fs::create_dir_all(cache_dir) {
+        eprintln!("Unable to create graphics pipeline cache directory: {error}");
+        return (None, None);
+    }
+    let cache_path = cache_dir.join(key);
+    let data = fs::read(&cache_path).ok();
+
+    // SAFETY: this application only writes this file from `PipelineCache::get_data`, and wgpu
+    // validates the adapter/driver metadata. `fallback` discards stale cache data.
+    let cache = unsafe {
+        device.create_pipeline_cache(&PipelineCacheDescriptor {
+            label: Some("Persistent render pipeline cache"),
+            data: data.as_deref(),
+            fallback: true,
+        })
+    };
+    (Some(cache), Some(cache_path))
+}
+
 /// This is the entry point to the renderer. It's called by the application to initialize the event
 /// loop. It maintains ownership of the user state, and can be interacted with through the `_handler`
 /// callback functions.
@@ -346,7 +406,7 @@ async fn setup_async(instance: &Instance, surface: &Surface<'static>) -> (Adapte
         .request_device(&wgpu::DeviceDescriptor {
             label: None,
             // https://docs.rs/wgpu/latest/wgpu/struct.Features.html
-            required_features: Features::empty(),
+            required_features: adapter.features() & Features::PIPELINE_CACHE,
             // https://docs.rs/wgpu/latest/wgpu/struct.Limits.html
             required_limits: Default::default(),
             memory_hints: Default::default(),
@@ -420,7 +480,7 @@ pub(crate) fn process_engine_updates(
     }
 
     if let Some(settings) = &updates.graphics_settings {
-        g_state.apply_graphics_settings(settings, queue);
+        g_state.apply_graphics_settings(settings, device, queue);
         // MSAA requires pipeline recreation; flag it for window.rs::redraw().
         if settings.msaa_samples != g_state.msaa_samples {
             g_state.pending_msaa = Some(settings.msaa_samples);

@@ -19,9 +19,9 @@ use lin_alg::f32::{Mat4, Vec3};
 use wgpu::{
     self, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer, BufferBindingType,
     BufferUsages, CommandEncoder, CommandEncoderDescriptor, DepthStencilState, Device, Face,
-    FragmentState, Queue, RenderPass, RenderPassDepthStencilAttachment, RenderPassDescriptor,
-    RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration, SurfaceTexture, TextureDescriptor,
-    TextureView, VertexBufferLayout, VertexState,
+    FragmentState, PipelineCache, Queue, RenderPass, RenderPassDepthStencilAttachment,
+    RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration,
+    SurfaceTexture, TextureDescriptor, TextureView, VertexBufferLayout, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 use winit::{
@@ -126,7 +126,7 @@ pub(crate) struct GraphicsState {
     /// We use this two-pipeline approach for transparent meshes for rendering ones that
     /// are transparent, and double-sided.
     pub pipeline_mesh_transparent_back: RenderPipeline, // todo: Move to renderer.
-    pub pipeline_gauss: RenderPipeline, // todo: Move to renderer.
+    pub pipeline_gauss: Option<RenderPipeline>, // todo: Move to renderer.
     /// Depth-only, front-face-culled pipeline for the halo prepass.
     pipeline_halo: RenderPipeline,
     pub depth_texture: Texture,
@@ -144,7 +144,7 @@ pub(crate) struct GraphicsState {
     /// Depth-only pipeline for populating depth_texture_contour (1-sample, back-face cull).
     pipeline_contour_depth: RenderPipeline,
     /// Full-screen pipeline that reads depth_texture_contour and overlays contour lines.
-    pipeline_contour_overlay: RenderPipeline,
+    pipeline_contour_overlay: Option<RenderPipeline>,
     /// Bind group for the contour overlay: depth texture + uniform buffer.
     pub bind_group_contour: wgpu::BindGroup,
     /// Layout reused when recreating the contour bind group on resize.
@@ -163,8 +163,12 @@ pub(crate) struct GraphicsState {
     pub surface_cfg: SurfaceConfiguration,
     /// Stored mesh shader (needed to recreate MSAA-dependent pipelines without re-parsing).
     shader_mesh: wgpu::ShaderModule,
+    /// Stored contour shader so its optional overlay pipeline can be compiled on first use.
+    shader_contour: wgpu::ShaderModule,
     /// Stored Gaussian shader (same reason).
     shader_gauss: wgpu::ShaderModule,
+    /// Application-managed cache shared by all render-pipeline creation in this device session.
+    pub pipeline_cache: Option<PipelineCache>,
     /// Full-screen SSAO overlay pipeline.
     pipeline_ssao: RenderPipeline,
     /// Bind-group layout for the SSAO pass (depth tex + uniform buf).
@@ -196,6 +200,7 @@ impl GraphicsState {
         mut scene: Scene,
         window: Arc<Window>,
         msaa_samples: u32,
+        pipeline_cache: Option<PipelineCache>,
     ) -> Self {
         let vertex_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex buffer"),
@@ -305,6 +310,7 @@ impl GraphicsState {
             None,
             Some(Face::Back),
             "Render pipeline mesh opaque",
+            pipeline_cache.as_ref(),
         );
 
         // Separate mesh for transparent meshes, so we disable back culling.
@@ -320,6 +326,7 @@ impl GraphicsState {
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Back),
             "Render pipeline mesh transparent",
+            pipeline_cache.as_ref(),
         );
 
         let pipeline_mesh_transparent_back = create_render_pipeline(
@@ -334,6 +341,7 @@ impl GraphicsState {
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Front),
             "Render pipeline mesh transparent – backfaces",
+            pipeline_cache.as_ref(),
         );
 
         // Halo prepass: depth-only, front-face culled, inflated by halo_expansion in vs.
@@ -353,6 +361,7 @@ impl GraphicsState {
             msaa_samples,
             &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
             depth_stencil_mesh.clone(),
+            pipeline_cache.as_ref(),
         );
 
         // ── Contour lines ────────────────────────────────────────────────────────────
@@ -373,6 +382,7 @@ impl GraphicsState {
                 &layout,
                 shader_mesh.clone(),
                 &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+                pipeline_cache.as_ref(),
             )
         };
 
@@ -417,14 +427,9 @@ impl GraphicsState {
             &depth_texture_contour.view,
             &contour_uniform_buf,
         );
-        let pipeline_contour_overlay = {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Contour overlay pipeline layout"),
-                bind_group_layouts: &[Some(&layout_contour)],
-                immediate_size: 0,
-            });
-            create_contour_overlay_pipeline(device, &layout, shader_contour, surface_cfg)
-        };
+        // The overlay is optional and disabled by default. Retain its shader, but postpone render
+        // pipeline compilation until contour settings first become non-zero.
+        let pipeline_contour_overlay = None;
         // ── End contour ──────────────────────────────────────────────────────────────
 
         // ── SSAO ─────────────────────────────────────────────────────────────────────
@@ -477,7 +482,13 @@ impl GraphicsState {
                 bind_group_layouts: &[Some(&layout_ssao)],
                 immediate_size: 0,
             });
-            create_ssao_pipeline(device, &layout, shader_ssao, surface_cfg)
+            create_ssao_pipeline(
+                device,
+                &layout,
+                shader_ssao,
+                surface_cfg,
+                pipeline_cache.as_ref(),
+            )
         };
         // ── End SSAO ─────────────────────────────────────────────────────────────────
 
@@ -516,31 +527,23 @@ impl GraphicsState {
             bias: wgpu::DepthBiasState::default(),
         });
 
-        let pipeline_gauss = create_render_pipeline(
-            device,
-            &pipeline_layout_gauss,
-            shader_gauss.clone(),
-            surface_cfg,
-            msaa_samples,
-            &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
-            depth_stencil_gauss,
-            // todo These two blend styles approaches produce noticibly different results. Experiment.
-            Some(BlendState::ALPHA_BLENDING),
-            None,
-            // Some(BlendState {
-            //     color: BlendComponent {
-            //         src_factor: BlendFactor::One,
-            //         dst_factor: BlendFactor::One,
-            //         operation: BlendOperation::Add,
-            //     },
-            //     alpha: BlendComponent {
-            //         src_factor: BlendFactor::One,
-            //         dst_factor: BlendFactor::One,
-            //         operation: BlendOperation::Add,
-            //     },
-            // }),
-            "Render pipeline gaussian",
-        );
+        let pipeline_gauss = if scene.gaussians.is_empty() {
+            None
+        } else {
+            Some(create_render_pipeline(
+                device,
+                &pipeline_layout_gauss,
+                shader_gauss.clone(),
+                surface_cfg,
+                msaa_samples,
+                &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
+                depth_stencil_gauss,
+                Some(BlendState::ALPHA_BLENDING),
+                None,
+                "Render pipeline gaussian",
+                pipeline_cache.as_ref(),
+            ))
+        };
 
         let instance_gauss_buf = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Gaussian Instance buffer"),
@@ -593,7 +596,9 @@ impl GraphicsState {
             pending_msaa: None,
             surface_cfg: surface_cfg.clone(),
             shader_mesh,
+            shader_contour,
             shader_gauss,
+            pipeline_cache,
             pipeline_ssao,
             layout_ssao,
             bind_group_ssao,
@@ -964,11 +969,65 @@ impl GraphicsState {
         queue.write_buffer(&self.ssao_uniform_buf, 0, &bytes);
     }
 
+    fn ensure_contour_pipeline(&mut self, device: &Device) {
+        if self.pipeline_contour_overlay.is_some() {
+            return;
+        }
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Contour overlay pipeline layout"),
+            bind_group_layouts: &[Some(&self.layout_contour)],
+            immediate_size: 0,
+        });
+        self.pipeline_contour_overlay = Some(create_contour_overlay_pipeline(
+            device,
+            &layout,
+            self.shader_contour.clone(),
+            &self.surface_cfg,
+            self.pipeline_cache.as_ref(),
+        ));
+    }
+
+    fn ensure_gaussian_pipeline(&mut self, device: &Device) {
+        if self.scene.gaussians.is_empty() || self.pipeline_gauss.is_some() {
+            return;
+        }
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Gaussian pipeline layout"),
+            bind_group_layouts: &[Some(&self.bind_groups.layout_cam_gauss)],
+            immediate_size: 0,
+        });
+        let depth = Some(DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        });
+        self.pipeline_gauss = Some(create_render_pipeline(
+            device,
+            &layout,
+            self.shader_gauss.clone(),
+            &self.surface_cfg,
+            self.msaa_samples,
+            &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
+            depth,
+            Some(BlendState::ALPHA_BLENDING),
+            None,
+            "Render pipeline gaussian",
+            self.pipeline_cache.as_ref(),
+        ));
+    }
+
     /// Apply a complete `GraphicsSettings` snapshot to this state.
     /// Shared by init (via `system.rs`) and runtime updates (via `process_engine_updates`).
     /// MSAA is intentionally excluded – it requires pipeline recreation and is
     /// handled separately via `pending_msaa` / `apply_msaa_change`.
-    pub(crate) fn apply_graphics_settings(&mut self, settings: &GraphicsSettings, queue: &Queue) {
+    pub(crate) fn apply_graphics_settings(
+        &mut self,
+        settings: &GraphicsSettings,
+        device: &Device,
+        queue: &Queue,
+    ) {
         // ── Edge cueing ───────────────────────────────────────────────────────
         let new_edge = settings.edge_cueing.unwrap_or(0.0);
         if self.scene.camera.edge_cueing != new_edge {
@@ -986,6 +1045,9 @@ impl GraphicsState {
         // ── Contour lines ─────────────────────────────────────────────────────
         let new_depth_rev = settings.depth_revealing_contour_lines.unwrap_or(0.0);
         let new_isect_rev = settings.intersection_revealing_contour_lines.unwrap_or(0.0);
+        if new_depth_rev > 0. || new_isect_rev > 0. {
+            self.ensure_contour_pipeline(device);
+        }
         if self.depth_revealing != new_depth_rev || self.intersection_revealing != new_isect_rev {
             self.depth_revealing = new_depth_rev;
             self.intersection_revealing = new_isect_rev;
@@ -1063,6 +1125,7 @@ impl GraphicsState {
             None,
             Some(Face::Back),
             "Render pipeline mesh opaque",
+            self.pipeline_cache.as_ref(),
         );
         self.pipeline_mesh_transparent = create_render_pipeline(
             device,
@@ -1075,6 +1138,7 @@ impl GraphicsState {
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Back),
             "Render pipeline mesh transparent",
+            self.pipeline_cache.as_ref(),
         );
         self.pipeline_mesh_transparent_back = create_render_pipeline(
             device,
@@ -1087,6 +1151,7 @@ impl GraphicsState {
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Front),
             "Render pipeline mesh transparent – backfaces",
+            self.pipeline_cache.as_ref(),
         );
 
         let pipeline_layout_halo = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1104,33 +1169,12 @@ impl GraphicsState {
             new_msaa,
             &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
             depth_stencil_mesh,
+            self.pipeline_cache.as_ref(),
         );
 
-        let depth_stencil_gauss = Some(DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(false),
-            depth_compare: Some(wgpu::CompareFunction::Less),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        });
-        let pipeline_layout_gauss =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Gaussian pipeline layout"),
-                bind_group_layouts: &[Some(&self.bind_groups.layout_cam_gauss)],
-                immediate_size: 0,
-            });
-        self.pipeline_gauss = create_render_pipeline(
-            device,
-            &pipeline_layout_gauss,
-            self.shader_gauss.clone(),
-            &self.surface_cfg,
-            new_msaa,
-            &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
-            depth_stencil_gauss,
-            Some(BlendState::ALPHA_BLENDING),
-            None,
-            "Render pipeline gaussian",
-        );
+        if self.pipeline_gauss.take().is_some() || !self.scene.gaussians.is_empty() {
+            self.ensure_gaussian_pipeline(device);
+        }
     }
 
     fn setup_render_pass<'a>(
@@ -1272,8 +1316,10 @@ impl GraphicsState {
         }
 
         // Draw gaussians.
-        if !self.scene.gaussians.is_empty() {
-            rpass.set_pipeline(&self.pipeline_gauss);
+        if !self.scene.gaussians.is_empty()
+            && let Some(pipeline) = &self.pipeline_gauss
+        {
+            rpass.set_pipeline(pipeline);
 
             rpass.set_bind_group(0, &self.bind_groups.cam_gauss, &[]);
 
@@ -1383,6 +1429,7 @@ impl GraphicsState {
         // done along with a mesh change prior to setting up the render pass, or else we will get
         // an error about an index being out of bounds.
         process_engine_updates(&updates_gui, self, device, queue);
+        self.ensure_gaussian_pipeline(device);
         let request_redraw = updates_gui.request_redraw;
 
         // Geometry prepass: render opaque geometry into the 1-sample depth texture used
@@ -1457,7 +1504,7 @@ impl GraphicsState {
         drop(rpass); // End the 3D render pass (MSAA resolve happens here).
 
         // Contour overlay: alpha-blend dark lines on top of the resolved scene.
-        if contours_active {
+        if contours_active && let Some(pipeline) = &self.pipeline_contour_overlay {
             let mut overlay = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Contour overlay"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1474,7 +1521,7 @@ impl GraphicsState {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            overlay.set_pipeline(&self.pipeline_contour_overlay);
+            overlay.set_pipeline(pipeline);
             overlay.set_bind_group(0, &self.bind_group_contour, &[]);
             overlay.draw(0..3, 0..1); // full-screen triangle
             drop(overlay);
@@ -1556,6 +1603,7 @@ fn create_render_pipeline(
     blend: Option<BlendState>,
     cull_mode: Option<Face>,
     label: &str,
+    cache: Option<&PipelineCache>,
 ) -> RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
@@ -1597,7 +1645,7 @@ fn create_render_pipeline(
         // If the pipeline will be used with a multiview render pass, this
         // indicates how many array layers the attachments will have.
         multiview_mask: None,
-        cache: None,
+        cache,
     })
 }
 
@@ -1609,6 +1657,7 @@ fn create_render_pipeline_depth_only(
     sample_count: u32,
     vertex_buffers: &'static [VertexBufferLayout<'static>],
     depth_stencil: DepthStencilState,
+    cache: Option<&PipelineCache>,
 ) -> RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Halo depth-only pipeline"),
@@ -1649,7 +1698,7 @@ fn create_render_pipeline_depth_only(
             alpha_to_coverage_enabled: false,
         },
         multiview_mask: None,
-        cache: None,
+        cache,
     })
 }
 
@@ -1676,6 +1725,7 @@ fn create_contour_depth_pipeline(
     layout: &wgpu::PipelineLayout,
     shader: wgpu::ShaderModule,
     vertex_buffers: &'static [VertexBufferLayout<'static>],
+    cache: Option<&PipelineCache>,
 ) -> RenderPipeline {
     let depth_stencil = DepthStencilState {
         format: DEPTH_FORMAT,
@@ -1710,7 +1760,7 @@ fn create_contour_depth_pipeline(
             alpha_to_coverage_enabled: false,
         },
         multiview_mask: None,
-        cache: None,
+        cache,
     })
 }
 
@@ -1720,6 +1770,7 @@ fn create_contour_overlay_pipeline(
     layout: &wgpu::PipelineLayout,
     shader: wgpu::ShaderModule,
     config: &SurfaceConfiguration,
+    cache: Option<&PipelineCache>,
 ) -> RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Contour overlay pipeline"),
@@ -1756,7 +1807,7 @@ fn create_contour_overlay_pipeline(
             alpha_to_coverage_enabled: false,
         },
         multiview_mask: None,
-        cache: None,
+        cache,
     })
 }
 
@@ -1844,6 +1895,7 @@ fn create_ssao_pipeline(
     layout: &wgpu::PipelineLayout,
     shader: wgpu::ShaderModule,
     config: &SurfaceConfiguration,
+    cache: Option<&PipelineCache>,
 ) -> RenderPipeline {
     use wgpu::{BlendComponent, BlendFactor, BlendOperation};
     // Multiplicative blend: scene_color * ao_factor.
@@ -1895,7 +1947,7 @@ fn create_ssao_pipeline(
             alpha_to_coverage_enabled: false,
         },
         multiview_mask: None,
-        cache: None,
+        cache,
     })
 }
 
