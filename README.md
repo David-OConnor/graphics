@@ -17,7 +17,7 @@ Allows importing and creating arbitrary meshes.
 
 
 It includes built in FPS-style (Amplified for 6 DOF) camera controls. (WSAD + Space for up, C for down, Q and E for roll.
-Mouse for pitch and yaw). This can be overridden by the application with arbitrary controls. (See the `event_handler` parameter to
+Mouse for pitch and yaw). This can be overridden by the application with arbitrary controls. (See the `event_dev_handler` and `event_win_handler` parameters to
 `graphics::run()`)
 
 ![Surface demo](screenshots/surface_mesh_transparent.png)
@@ -39,14 +39,15 @@ through the `_handler` callbacks; each frame, each hardware event, or through th
 use std::f32::consts::TAU;
 
 use graphics::{
-    Camera, ControlScheme, DeviceEvent, EngineUpdates, Entity, InputSettings, LightType, Lighting,
-    Mesh, PointLight, Scene, UiLayoutSides, UiLayoutTopBottom, UiSettings, GraphicsSettings, RIGHT_VEC, UP_VEC
+    Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, EntityUpdate,
+    Gaussian, GraphicsSettings, InputSettings, LightType, Lighting, Mesh, PointLight, RIGHT_VEC,
+    Scene, UP_VEC, UiLayoutSides, UiLayoutTopBottom, UiSettings, WindowEvent,
 };
-use egui::{Ui, Slider, Panel};
+use egui::{Panel, Slider, Ui};
 
 use lin_alg::f32::{Quaternion, Vec3};
 
-use crate::{playback::change_snapshot, ui::ui_handler, State};
+use crate::playback::change_snapshot;
 
 type Color = (f32, f32, f32);
 
@@ -84,7 +85,8 @@ fn event_dev_handler(
                         if let Some(cursor) = state_.ui.cursor_pos {
                             let selected_ray = scene.screen_to_render(cursor);
 
-                            let objects_selected = points_along_ray(selected_ray, &objectcs, 1.0);
+                            let objects_selected =
+                                points_along_ray(selected_ray, &state_.objects, 1.0);
                         }
                     }
                     ElementState::Released => (),
@@ -104,7 +106,7 @@ fn event_win_handler(
     _dt: f32,
 ) -> EngineUpdates {
     match event {
-        WindowEvent::CursorMoved { device_id, position } => {
+        WindowEvent::CursorMoved { position, .. } => {
             state.ui.cursor_pos = Some((position.x as f32, position.y as f32))
         }
         _ => (),
@@ -196,7 +198,7 @@ fn cam_controls(
 pub fn ui_handler(state: &mut State, ui: &mut Ui, scene: &mut Scene) -> EngineUpdates {
     let mut engine_updates = EngineUpdates::default();
 
-    Panel::top("0").show_ijnside(ui, |ui| {
+    Panel::top("0").show_inside(ui, |ui| {
         ui.spacing_mut().slider_width = SLIDER_WIDTH;
 
         ui.horizontal(|ui| {
@@ -228,23 +230,21 @@ pub fn ui_handler(state: &mut State, ui: &mut Ui, scene: &mut Scene) -> EngineUp
 }
 
 
-fn draw_entities(entities: &mut Vec<Entity>, snapshots: &[Snapshot]) {
+fn draw_entities(entities: &mut Vec<Entity>, snapshot: &Snapshot) {
     *entities = Vec::new();
 
     // Note: If you associate a color with a `Vertex` in a `Mesh`, that will override 
     // entity color.
 
     // Alternate way to construct: use its `Default` impl, overriding fields as required.
+    // Manually set the `scale_partial` field with a `Vec3` if using non-uniform scaling.
     entities.push(Entity::new(
-        // manually set the `scale_partial` field with a `Vec3` if using non-uniform scaling. 
-        Entity::new(
-            MESH_BOND, // Index of the mesh.
-            center + offset_b,
-            orientation, // A quaternion,
-            1., // Scale
-            BOND_COLOR,
-            BODY_SHINYNESS,
-        )
+        MESH_BOND, // Index of the mesh.
+        center + offset_b,
+        orientation, // A quaternion,
+        1., // Scale
+        BOND_COLOR,
+        BODY_SHINYNESS,
     ))
 }
 
@@ -293,12 +293,14 @@ pub fn render(state: State) {
         background_color: BACKGROUND_COLOR,
         window_size: (WINDOW_SIZE_X, WINDOW_SIZE_Y),
         window_title: WINDOW_TITLE.to_owned(),
+        ..Default::default()
     };
 
     let ui_settings = UiSettings {
         layout_sides: UiLayoutSides::Left,
         layout_top_bottom: UiLayoutTopBottom::Top,
         icon_path: Some("./resources/icon.png".to_owned()),
+        pipeline_cache_dir: None,
     };
 
     // Initialize entities.
@@ -332,6 +334,10 @@ fn main() {
 
 You can add overlay text using the entity's `overlay_text` field:
 ```rust
+use egui::FontFamily;
+use graphics::{Entity, TextOverlay};
+use lin_alg::f32::Quaternion;
+
 let mut entity = Entity::new(
     mesh,
     mol.common().atom_posits[i_atom].into(),
@@ -355,7 +361,7 @@ entity.class = mol.mol_type().entity_type() as u32;
 ![Molchanica example of a ribbon-protein render, and GUI](screenshots/molchanica_ribbon_view.png)
 
 ## Graphics settings
-You can update graphics settings during application run by passing a `Some(GraphicsSettings)` value in `EngineUpdates::graphics_updates`. It defaults to None. You pass a new `GraphicsSettings` struct, and it updates settings immediately.
+You can update graphics settings during application run by passing a `Some(GraphicsSettings)` value in `EngineUpdates::graphics_settings`. It defaults to None. You pass a new `GraphicsSettings` struct, and it updates settings immediately.
 
 Settings available. See the [GraphicsSettings docs page](https://docs.rs/graphics/latest/graphics/struct.GraphicsSettings.html) for details:
 
@@ -367,6 +373,5 @@ Settings available. See the [GraphicsSettings docs page](https://docs.rs/graphic
 - Depth revealing contour lines
 - Intersection-revealing contour lines
 - A framerate counter.
-- 
 
 ![Mol viewer screenshot](screenshots/mol_viewer_2025.png)
