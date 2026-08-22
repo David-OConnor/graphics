@@ -1,5 +1,5 @@
 # Graphics
-A 3D rendering engine for rust programs, with GUI integration
+A 3D rendering engine for rust programs, with GUI integration.
 
 [![Crate](https://img.shields.io/crates/v/graphics.svg)](https://crates.io/crates/graphics)
 [![Docs](https://docs.rs/graphics/badge.svg)](https://docs.rs/graphics)
@@ -351,7 +351,9 @@ entity.overlay_text = Some(TextOverlay {
 entity.class = mol.mol_type().entity_type() as u32;
 ```
 
-## Graphics settings.
+![Molchanica example of a ribbon-protein render, and GUI](screenshots/molchanica_ribbon_view.png)
+
+## Graphics settings
 You can update graphics settings during application run by passing a `Some(GraphicsSettings)` value in `EngineUpdates::graphics_updates`. It defaults to None. You pass a new `GraphicsSettings` struct, and it updates settings immediately.
 
 Settings available. See the [GraphicsSettings docs page](https://docs.rs/graphics/latest/graphics/struct.GraphicsSettings.html) for details:
