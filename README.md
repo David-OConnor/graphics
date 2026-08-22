@@ -26,7 +26,8 @@ It uses the [lin_alg](https://docs.rs/lin_alg/latest/lin_alg/f32/index.html) lib
 
 You can enable the `app_utils` feature for utility functionality that is useful in applications that might use this library, but is not directly related to the GUI.
 
-![WF lab screenshot](screenshots/psi_lab_2024.png)
+<!-- ![WF lab screenshot](screenshots/psi_lab_2024.png) -->
+![Ribbon Mesh example](screenshots/ribbon_sifts_res_color.png)
 
 Example boilerplate below. Calling `render(state)` starts an event loop. The application can interact with the engine 
 through the `_handler` callbacks; each frame, each hardware event, or through the GUI. Each of these return an 
