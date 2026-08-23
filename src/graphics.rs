@@ -1408,7 +1408,7 @@ impl GraphicsState {
 
         let mut updates_gui = Default::default();
 
-        let (gui_full_output, tris, screen_descriptor, resize_required) = gui.render_gui_pre_rpass(
+        let (mut gui_full_output, tris, screen_descriptor, resize_required) = gui.render_gui_pre_rpass(
             self,
             user_state,
             device,
@@ -1578,8 +1578,8 @@ impl GraphicsState {
                 .render(&mut egui_pass, &tris, &screen_descriptor);
         }
 
-        for x in &gui_full_output.textures_delta.free {
-            gui.egui_renderer.free_texture(x)
+        for x in gui_full_output.textures_delta.free.drain() {
+            gui.egui_renderer.free_texture(&x)
         }
 
         queue.submit(Some(encoder.finish()));

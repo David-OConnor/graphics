@@ -119,10 +119,12 @@ impl GuiState {
             self.egui_state.egui_ctx().pixels_per_point(),
         );
 
-        for (id, image_deltas) in &full_output.textures_delta.set {
-            for image_delta in image_deltas {
+        // Drain rather than iterate by reference: egui panics on `Drop` if a
+        // `TexturesDelta` still holds unapplied deltas.
+        for (id, image_deltas) in full_output.textures_delta.set.drain() {
+            for image_delta in &image_deltas {
                 self.egui_renderer
-                    .update_texture(device, queue, *id, image_delta);
+                    .update_texture(device, queue, id, image_delta);
             }
         }
 
