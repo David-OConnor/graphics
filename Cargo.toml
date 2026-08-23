@@ -20,11 +20,11 @@ license = "MIT"
 lin_alg = { version = "1.4.3", features = ["computer_graphics"] }
 
 # 3D and graphics libraries. There is a degree of interdependence between them.
-wgpu = "29.0.1"
-winit = "0.30.12"
-egui = "0.34.1"
-egui-wgpu = "0.34.1"
-egui-winit = "0.34.1"
+wgpu = "30.0.1"
+winit = "0.30.13"
+egui = "0.36.1"
+egui-wgpu = "0.36.1"
+egui-winit = "0.36.1"
 
 pollster = "0.4.0"  # For 2 WGPU init fns that use async.
 image = "0.25.10" # For loading textures
@@ -37,4 +37,4 @@ bincode = { version = "2.0.1", optional = true } # For our save/load util.
 
 
 [features]
-app_utils = ["bincode", "lin_alg/bincode"]
+app_utils = ["bincode", "lin_alg/encode"]

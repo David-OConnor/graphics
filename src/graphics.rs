@@ -304,7 +304,7 @@ impl GraphicsState {
             shader_mesh.clone(),
             surface_cfg,
             msaa_samples,
-            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
             Some(depth_stencil_mesh.clone()),
             // Some(depth_stencil_mesh),
             None,
@@ -320,7 +320,7 @@ impl GraphicsState {
             shader_mesh.clone(),
             surface_cfg,
             msaa_samples,
-            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
             // Some(depth_stencil_mesh_transparent.clone()),
             Some(depth_stencil_mesh.clone()),
             Some(BlendState::ALPHA_BLENDING),
@@ -335,7 +335,7 @@ impl GraphicsState {
             shader_mesh.clone(),
             surface_cfg,
             msaa_samples,
-            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
             // Some(depth_stencil_mesh_transparent),
             Some(depth_stencil_mesh.clone()),
             Some(BlendState::ALPHA_BLENDING),
@@ -359,7 +359,7 @@ impl GraphicsState {
             &pipeline_layout_halo,
             shader_mesh.clone(),
             msaa_samples,
-            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
             depth_stencil_mesh.clone(),
             pipeline_cache.as_ref(),
         );
@@ -381,7 +381,7 @@ impl GraphicsState {
                 device,
                 &layout,
                 shader_mesh.clone(),
-                &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+                &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
                 pipeline_cache.as_ref(),
             )
         };
@@ -536,7 +536,7 @@ impl GraphicsState {
                 shader_gauss.clone(),
                 surface_cfg,
                 msaa_samples,
-                &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
+                &[Some(QUAD_VERTEX_LAYOUT), Some(GAUSS_INST_LAYOUT)],
                 depth_stencil_gauss,
                 Some(BlendState::ALPHA_BLENDING),
                 None,
@@ -1009,7 +1009,7 @@ impl GraphicsState {
             self.shader_gauss.clone(),
             &self.surface_cfg,
             self.msaa_samples,
-            &[QUAD_VERTEX_LAYOUT, GAUSS_INST_LAYOUT],
+            &[Some(QUAD_VERTEX_LAYOUT), Some(GAUSS_INST_LAYOUT)],
             depth,
             Some(BlendState::ALPHA_BLENDING),
             None,
@@ -1120,7 +1120,7 @@ impl GraphicsState {
             self.shader_mesh.clone(),
             &self.surface_cfg,
             new_msaa,
-            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
             Some(depth_stencil_mesh.clone()),
             None,
             Some(Face::Back),
@@ -1133,7 +1133,7 @@ impl GraphicsState {
             self.shader_mesh.clone(),
             &self.surface_cfg,
             new_msaa,
-            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
             Some(depth_stencil_mesh.clone()),
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Back),
@@ -1146,7 +1146,7 @@ impl GraphicsState {
             self.shader_mesh.clone(),
             &self.surface_cfg,
             new_msaa,
-            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
             Some(depth_stencil_mesh.clone()),
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Front),
@@ -1167,7 +1167,7 @@ impl GraphicsState {
             &pipeline_layout_halo,
             self.shader_mesh.clone(),
             new_msaa,
-            &[VERTEX_LAYOUT, INSTANCE_LAYOUT],
+            &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
             depth_stencil_mesh,
             self.pipeline_cache.as_ref(),
         );
@@ -1584,7 +1584,7 @@ impl GraphicsState {
 
         queue.submit(Some(encoder.finish()));
 
-        surface_texture.present();
+        queue.present(surface_texture);
 
         (resize_required, request_redraw)
     }
@@ -1598,7 +1598,7 @@ fn create_render_pipeline(
     shader: wgpu::ShaderModule,
     config: &SurfaceConfiguration,
     sample_count: u32,
-    vertex_buffers: &'static [VertexBufferLayout<'static>],
+    vertex_buffers: &'static [Option<VertexBufferLayout<'static>>],
     depth_stencil: Option<DepthStencilState>,
     blend: Option<BlendState>,
     cull_mode: Option<Face>,
@@ -1655,7 +1655,7 @@ fn create_render_pipeline_depth_only(
     layout: &wgpu::PipelineLayout,
     shader: wgpu::ShaderModule,
     sample_count: u32,
-    vertex_buffers: &'static [VertexBufferLayout<'static>],
+    vertex_buffers: &'static [Option<VertexBufferLayout<'static>>],
     depth_stencil: DepthStencilState,
     cache: Option<&PipelineCache>,
 ) -> RenderPipeline {
@@ -1724,7 +1724,7 @@ fn create_contour_depth_pipeline(
     device: &Device,
     layout: &wgpu::PipelineLayout,
     shader: wgpu::ShaderModule,
-    vertex_buffers: &'static [VertexBufferLayout<'static>],
+    vertex_buffers: &'static [Option<VertexBufferLayout<'static>>],
     cache: Option<&PipelineCache>,
 ) -> RenderPipeline {
     let depth_stencil = DepthStencilState {

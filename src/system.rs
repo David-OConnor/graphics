@@ -158,6 +158,7 @@ where
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             // format: surface.get_supported_formats(&adapter)[0],
             format: COLOR_FORMAT,
+            color_space: wgpu::SurfaceColorSpace::Auto,
             width: size.width,
             height: size.height,
             // https://docs.rs/wgpu/latest/wgpu/enum.PresentMode.html
@@ -398,6 +399,7 @@ async fn setup_async(instance: &Instance, surface: &Surface<'static>) -> (Adapte
             power_preference: PowerPreference::default(),
             compatible_surface: Some(surface),
             force_fallback_adapter: false,
+            apply_limit_buckets: false,
         })
         .await
         .unwrap();

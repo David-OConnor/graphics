@@ -119,9 +119,11 @@ impl GuiState {
             self.egui_state.egui_ctx().pixels_per_point(),
         );
 
-        for (id, image_delta) in &full_output.textures_delta.set {
-            self.egui_renderer
-                .update_texture(device, queue, *id, image_delta);
+        for (id, image_deltas) in &full_output.textures_delta.set {
+            for image_delta in image_deltas {
+                self.egui_renderer
+                    .update_texture(device, queue, *id, image_delta);
+            }
         }
 
         self.egui_renderer
