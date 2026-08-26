@@ -66,8 +66,8 @@ fn linearize(d: f32) -> f32 {
 
 // 4×4 box: offsets -2..1 on each axis cover one full noise tile.
 // LO = -1 and HI = 0 produces a less smooth/more pixelated effect.
-const TAP_LO: i32 = -1.5;
-const TAP_HI: i32 =  0.5;
+const TAP_LO: i32 = -1;
+const TAP_HI: i32 =  0;
 
 @fragment
 fn fs_ssao_blur(input: VOut) -> @location(0) vec4<f32> {
