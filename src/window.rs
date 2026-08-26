@@ -430,7 +430,12 @@ where
             }
         }
 
-        // drop order is mandatory in Linux/Wayland
+        // The event loop (and the Wayland display connection) is dropped when `run_app`
+        // returns, since it takes `self` by value; so anything holding a display
+        // reference must be torn down here, while the connection is still alive:
+        // egui-winit's clipboard (smithay-clipboard), the wgpu surface, then the window.
+        // Order matters: GPU resources before the device, surface before the window. Not doing this
+        // is generally fine, but on Linux/Wayland, will cause a segfault on exit.
         self.gui = None;
         self.render = None;
         self.graphics = None;
