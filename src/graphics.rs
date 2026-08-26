@@ -34,7 +34,7 @@ use crate::{
     gauss::{CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT, QUAD_VERTICES},
     gui::GuiState,
     input::{self, InputsCommanded},
-    system::{COLOR_FORMAT, DEPTH_FORMAT, process_engine_updates},
+    system::{COLOR_FORMAT, DEPTH_FORMAT, SSAO_FORMAT, process_engine_updates},
     text_overlay::{draw_framerate, draw_text_overlay},
     texture::Texture,
     types::{
@@ -169,7 +169,7 @@ pub(crate) struct GraphicsState {
     shader_gauss: wgpu::ShaderModule,
     /// Application-managed cache shared by all render-pipeline creation in this device session.
     pub pipeline_cache: Option<PipelineCache>,
-    /// Full-screen SSAO overlay pipeline.
+    /// Full-screen SSAO pipeline; writes raw (noisy) occlusion into `ssao_texture`.
     pipeline_ssao: RenderPipeline,
     /// Bind-group layout for the SSAO pass (depth tex + uniform buf).
     pub layout_ssao: wgpu::BindGroupLayout,
@@ -177,6 +177,15 @@ pub(crate) struct GraphicsState {
     pub bind_group_ssao: wgpu::BindGroup,
     /// Uniform buffer written every frame when SSAO is active.
     pub ssao_uniform_buf: Buffer,
+    /// Offscreen 1-sample AO buffer sitting between the SSAO pass and the blur pass.
+    /// SSAO is noisy by construction, so it cannot go straight onto the scene.
+    pub ssao_texture: Texture,
+    /// Full-screen pipeline that blurs `ssao_texture` and multiplies it into the scene.
+    pipeline_ssao_blur: RenderPipeline,
+    /// Bind-group layout for the blur pass (depth tex + uniform buf + AO tex).
+    pub layout_ssao_blur: wgpu::BindGroupLayout,
+    /// Bind group referencing depth_texture_contour, ssao_uniform_buf and ssao_texture.
+    pub bind_group_ssao_blur: wgpu::BindGroup,
     /// Which corner (if any) to display the frame rate readout in.
     pub framerate_display: FramerateDisplay,
     /// The frame rate shown by the readout; averaged over `FPS_UPDATE_INTERVAL`.
@@ -482,10 +491,72 @@ impl GraphicsState {
                 bind_group_layouts: &[Some(&layout_ssao)],
                 immediate_size: 0,
             });
-            create_ssao_pipeline(
+            create_ssao_pipeline(device, &layout, shader_ssao, pipeline_cache.as_ref())
+        };
+
+        // Blur + composite. The SSAO pass jitters its kernel per-pixel, so its output is
+        // noise-carrying by design; this pass integrates the noise back out and is what
+        // actually touches the scene.
+        let ssao_texture = Texture::create_ssao_texture(device, surface_cfg, "SSAO texture");
+        let shader_ssao_blur = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("SSAO blur shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader_ssao_blur.wgsl").into()),
+        });
+        let layout_ssao_blur = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("SSAO blur bind group layout"),
+            entries: &[
+                // Binding 0: 1-sample depth texture from geometry prepass (edge-aware blur).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // Binding 1: SSAO uniform buffer (shared with the SSAO pass).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(SSAO_UNIFORM_SIZE as u64),
+                    },
+                    count: None,
+                },
+                // Binding 2: raw AO buffer. Read with textureLoad, so no sampler is needed.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let bind_group_ssao_blur = create_ssao_blur_bind_group(
+            device,
+            &layout_ssao_blur,
+            &depth_texture_contour.view,
+            &ssao_uniform_buf,
+            &ssao_texture.view,
+        );
+        let pipeline_ssao_blur = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("SSAO blur pipeline layout"),
+                bind_group_layouts: &[Some(&layout_ssao_blur)],
+                immediate_size: 0,
+            });
+            create_ssao_blur_pipeline(
                 device,
                 &layout,
-                shader_ssao,
+                shader_ssao_blur,
                 surface_cfg,
                 pipeline_cache.as_ref(),
             )
@@ -603,6 +674,10 @@ impl GraphicsState {
             layout_ssao,
             bind_group_ssao,
             ssao_uniform_buf,
+            ssao_texture,
+            pipeline_ssao_blur,
+            layout_ssao_blur,
+            bind_group_ssao_blur,
             depth_texture,
             // staging_belt: wgpu::util::StagingBelt::new(0x100),
             scene,
@@ -962,8 +1037,8 @@ impl GraphicsState {
             self.scene.camera.position,
             self.scene.camera.near,
             self.scene.camera.far,
-            0.5,   // world-space sample radius
-            0.001, // depth bias (prevents self-occlusion)
+            0.5,  // world-space sample radius
+            0.01, // self-occlusion bias, as a fraction of the pixel's view distance
             self.ssao_strength,
         );
         queue.write_buffer(&self.ssao_uniform_buf, 0, &bytes);
@@ -1177,18 +1252,17 @@ impl GraphicsState {
         }
     }
 
+    /// `viewport` is the 3D sub-rect of the window (x, y, width, height, in physical
+    /// pixels) that the GUI leaves free — see [`viewport_rect`]. The prepass and the
+    /// overlay passes must be given the same rect, or their depth buffer lands in
+    /// different screen pixels than the colour image.
     fn setup_render_pass<'a>(
         &mut self,
         encoder: &'a mut CommandEncoder,
         output_view: &TextureView,
-        win_width: u32,
-        win_height: u32,
-        ui_settings: &UiSettings,
-        ui_size: (f32, f32),
-        pixels_per_pt: f32, // todo: Currently unused.
+        viewport: (f32, f32, f32, f32),
     ) -> RenderPass<'a> {
-        let (x, y, eff_width, eff_height) =
-            viewport_rect(ui_size, win_width, win_height, ui_settings, pixels_per_pt);
+        let (x, y, eff_width, eff_height) = viewport;
 
         let color_attachment = if let Some(msaa_texture) = &self.msaa_texture {
             // Use MSAA texture as render target, resolve to the swap chain texture
@@ -1328,9 +1402,6 @@ impl GraphicsState {
 
             rpass.draw(0..6, 0..self.scene.gaussians.len() as _); // 6 indices for the quad
         }
-
-        // Apply the calculated viewport
-        rpass.set_viewport(x, y, eff_width, eff_height, 0., 1.);
 
         rpass
     }
@@ -1484,28 +1555,14 @@ impl GraphicsState {
         let rpass = self.setup_render_pass(
             &mut encoder,
             output_texture,
-            width,
-            height,
-            ui_settings, // Pass settings
-            gui.size,    // Pass current size
-            0.,          // pixels per point. A/R.
+            (vp_x, vp_y, vp_width, vp_height),
         );
 
-        // Update aspect ratio based on the ACTUAL 3D viewport size,
-        // not the window size.
-        // We have to calculate the effective size locally here again, or return it
-        // from setup_render_pass. Calculating it simply here:
-        let mut viewport_w = width as f32;
-        let mut viewport_h = height as f32;
-
-        viewport_w -= gui.size.0;
-        viewport_h -= gui.size.1;
-
-        if viewport_w > 0.0 && viewport_h > 0.0 {
-            self.scene.camera.aspect = viewport_w / viewport_h;
-            self.scene.camera.update_proj_mat();
-            self.update_camera(queue);
-        }
+        // Aspect ratio comes from the ACTUAL 3D viewport, not the window: the same rect
+        // the passes above are scissored to, so the projection and the pixels agree.
+        self.scene.camera.aspect = vp_width / vp_height;
+        self.scene.camera.update_proj_mat();
+        self.update_camera(queue);
 
         drop(rpass); // End the 3D render pass (MSAA resolve happens here).
 
@@ -1535,31 +1592,64 @@ impl GraphicsState {
             drop(overlay);
         }
 
-        // SSAO overlay: darken ambient-occluded areas via multiplicative blend.
+        // SSAO, in two passes. The occlusion estimate jitters its sample kernel per
+        // pixel, so writing it straight onto the scene shows up as speckle; it goes to
+        // an offscreen buffer first, and the blur pass below both smooths it and
+        // composites it.
         if ssao_active {
             self.update_ssao_uniforms(queue);
-            let mut overlay = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("SSAO overlay"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: output_texture,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load, // preserve the rendered scene
-                        store: StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
 
-            overlay.set_viewport(vp_x, vp_y, vp_width, vp_height, 0., 1.);
-            overlay.set_pipeline(&self.pipeline_ssao);
-            overlay.set_bind_group(0, &self.bind_group_ssao, &[]);
-            overlay.draw(0..3, 0..1); // full-screen triangle
-            drop(overlay);
+            // 1. Estimate occlusion into the AO buffer. Clearing to white leaves the
+            // region outside the viewport unoccluded, which is what the blur's edge taps
+            // should see there.
+            {
+                let mut ao = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("SSAO"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.ssao_texture.view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+
+                ao.set_viewport(vp_x, vp_y, vp_width, vp_height, 0., 1.);
+                ao.set_pipeline(&self.pipeline_ssao);
+                ao.set_bind_group(0, &self.bind_group_ssao, &[]);
+                ao.draw(0..3, 0..1); // full-screen triangle
+            }
+
+            // 2. Blur the AO buffer and darken the scene with it (multiplicative blend).
+            {
+                let mut overlay = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("SSAO blur overlay"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: output_texture,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load, // preserve the rendered scene
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+
+                overlay.set_viewport(vp_x, vp_y, vp_width, vp_height, 0., 1.);
+                overlay.set_pipeline(&self.pipeline_ssao_blur);
+                overlay.set_bind_group(0, &self.bind_group_ssao_blur, &[]);
+                overlay.draw(0..3, 0..1); // full-screen triangle
+            }
         }
 
         // Egui pass – runs after all overlays so scene effects never paint over
@@ -1899,8 +1989,82 @@ pub(crate) fn create_ssao_bind_group(
     })
 }
 
-/// Full-screen alpha-blended (multiplicative) pipeline for the SSAO overlay.
+/// Full-screen pipeline that estimates occlusion into the offscreen AO buffer.
+/// Unblended: the blur pass is what composites onto the scene.
 fn create_ssao_pipeline(
+    device: &Device,
+    layout: &wgpu::PipelineLayout,
+    shader: wgpu::ShaderModule,
+    cache: Option<&PipelineCache>,
+) -> RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("SSAO pipeline"),
+        layout: Some(layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs_ssao"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs_ssao"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: SSAO_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::RED,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview_mask: None,
+        cache,
+    })
+}
+
+pub(crate) fn create_ssao_blur_bind_group(
+    device: &Device,
+    layout: &wgpu::BindGroupLayout,
+    depth_view: &TextureView,
+    uniform_buf: &Buffer,
+    ao_view: &TextureView,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("SSAO blur bind group"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(depth_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: uniform_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(ao_view),
+            },
+        ],
+    })
+}
+
+/// Full-screen pipeline that blurs the AO buffer and multiplies it into the scene.
+fn create_ssao_blur_pipeline(
     device: &Device,
     layout: &wgpu::PipelineLayout,
     shader: wgpu::ShaderModule,
@@ -1923,17 +2087,17 @@ fn create_ssao_pipeline(
         },
     };
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("SSAO overlay pipeline"),
+        label: Some("SSAO blur pipeline"),
         layout: Some(layout),
         vertex: VertexState {
             module: &shader,
-            entry_point: Some("vs_ssao"),
+            entry_point: Some("vs_ssao_blur"),
             compilation_options: Default::default(),
             buffers: &[],
         },
         fragment: Some(FragmentState {
             module: &shader,
-            entry_point: Some("fs_ssao"),
+            entry_point: Some("fs_ssao_blur"),
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format: config.format,

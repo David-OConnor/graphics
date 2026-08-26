@@ -1,7 +1,7 @@
 use image::GenericImageView;
 use wgpu::{Device, Queue, TextureDescriptor, TextureFormat};
 
-use crate::system::DEPTH_FORMAT;
+use crate::system::{DEPTH_FORMAT, SSAO_FORMAT};
 
 pub struct Texture {
     pub _texture: wgpu::Texture,
@@ -48,6 +48,42 @@ impl Texture {
             lod_max_clamp: 100.0,
             ..Default::default()
         });
+
+        Self {
+            _texture: texture,
+            view,
+            _sampler: sampler,
+        }
+    }
+
+    /// Create the offscreen ambient-occlusion buffer the SSAO pass writes and the blur
+    /// pass reads. Window-sized and 1-sample, like the contour depth texture it pairs
+    /// with, so the two can be indexed with the same window pixel coordinates.
+    pub fn create_ssao_texture(
+        device: &Device,
+        config: &wgpu::SurfaceConfiguration,
+        label: &str,
+    ) -> Self {
+        let desc = TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: SSAO_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+
+        let texture = device.create_texture(&desc);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // The blur reads with textureLoad, so this sampler is never bound; it exists only
+        // to satisfy the shared `Texture` shape.
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
 
         Self {
             _texture: texture,

@@ -1,17 +1,24 @@
-// Screen-space ambient occlusion (SSAO).
+// Screen-space ambient occlusion (SSAO) — occlusion estimation pass.
 //
 // Reads the 1-sample depth buffer written by the geometry prepass, reconstructs
 // world-space positions and normals per-pixel, then samples a fixed 16-point
-// hemisphere kernel (with per-pixel random rotation to reduce banding) to
-// estimate how much of the hemisphere is occluded by nearby geometry.
+// hemisphere kernel to estimate how much of the hemisphere is occluded by nearby
+// geometry.
 //
-// Output: grey vec4 where 1.0 = unoccluded, 0.0 = fully occluded.
-// Applied to the scene via a multiplicative blend: scene_color * ao.
+// The kernel is rotated by one of 16 angles picked from a 4×4 screen-space tile.
+// That trades banding for high-frequency noise, which `shader_ssao_blur.wgsl` then
+// removes exactly: a 4×4 box blur spans one whole tile, so every blurred pixel
+// averages all 16 rotations (16 rotations × 16 samples = 256 effective samples).
+// The blur is what makes the result smooth rather than speckled, so this pass
+// renders to an offscreen AO buffer and must not be composited onto the scene
+// directly.
+//
+// Output: R8 texture where 1.0 = unoccluded, 0.0 = fully occluded.
 
 struct SsaoUniforms {
     // Combined projection * view matrix, for projecting hemisphere samples back to screen.
     proj_view:     mat4x4<f32>,
-    // Inverse of proj_view, for reconstructing world-space position from depth + UV.
+    // Inverse of proj_view, for reconstructing world-space position from depth + NDC.
     proj_view_inv: mat4x4<f32>,
     // World-space camera position (to orient normals toward the viewer).
     cam_pos:       vec4<f32>,
@@ -19,7 +26,8 @@ struct SsaoUniforms {
     far:           f32,
     // World-space hemisphere sample radius.
     radius:        f32,
-    // Small depth bias to prevent surfaces from self-occluding.
+    // Self-occlusion bias, as a fraction of the linear view distance to the pixel.
+    // Relative rather than absolute because depth precision degrades with distance.
     bias:          f32,
     // Output strength multiplier: higher → darker crevices.
     strength:      f32,
@@ -47,9 +55,25 @@ fn vs_ssao(@builtin(vertex_index) vi: u32) -> VOut {
     return VOut(vec4<f32>(p, 0., 1.), p);
 }
 
-fn load_depth(px: vec2<i32>, dims: vec2<i32>) -> f32 {
-    let c = clamp(px, vec2<i32>(0), dims - 1);
-    return textureLoad(depth_tex, c, 0);
+// The 3D viewport is a sub-rect of the window when the GUI takes a side or top
+// panel, and the depth texture is window-sized — so pixels outside the viewport
+// hold the prepass clear value, not geometry. Recover the viewport rect from the
+// rasterizer: the full-screen triangle spans NDC [-1, 1], so the NDC-per-pixel
+// scale locates both edges. Returns (min_x, min_y, max_x, max_y) in window pixels,
+// max exclusive.
+fn viewport_bounds(pos: vec2<f32>, ndc: vec2<f32>, ndc_per_px: vec2<f32>) -> vec4<f32> {
+    let a = pos + (vec2<f32>(-1.) - ndc) / ndc_per_px;
+    let b = pos + (vec2<f32>( 1.) - ndc) / ndc_per_px;
+    // ndc_per_px.y is negative (NDC +y is up, window +y is down), so sort the pair.
+    return vec4<f32>(min(a, b), max(a, b));
+}
+
+// Clamp to the viewport rect (and to the texture, defensively), so edge taps never
+// read the untouched region under the GUI panel.
+fn load_depth(px: vec2<i32>, dims: vec2<i32>, vp: vec4<f32>) -> f32 {
+    let lo = max(vec2<i32>(vp.xy), vec2<i32>(0));
+    let hi = min(vec2<i32>(vp.zw) - 1, dims - 1);
+    return textureLoad(depth_tex, clamp(px, lo, hi), 0);
 }
 
 // Non-linear perspective depth (0..1) → linear view-space distance.
@@ -64,11 +88,6 @@ fn world_from_depth(ndc_xy: vec2<f32>, depth: f32) -> vec3<f32> {
     return world_h.xyz / world_h.w;
 }
 
-// Simple hash for pseudo-random per-pixel rotation (reduces banding).
-fn hash21(p: vec2<f32>) -> f32 {
-    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
-}
-
 // Rotate 2-D vector by angle (radians).
 fn rot2(v: vec2<f32>, a: f32) -> vec2<f32> {
     let s = sin(a);
@@ -78,10 +97,16 @@ fn rot2(v: vec2<f32>, a: f32) -> vec2<f32> {
 
 @fragment
 fn fs_ssao(input: VOut) -> @location(0) vec4<f32> {
-    let dims  = vec2<i32>(textureDimensions(depth_tex));
-    let px    = vec2<i32>(input.pos.xy);
+    // Differentiate NDC with respect to window pixels. Constant over the triangle,
+    // but derivatives are only defined in uniform control flow, so take them before
+    // the sky early-out below.
+    let ndc_per_px = vec2<f32>(dpdx(input.ndc.x), dpdy(input.ndc.y));
 
-    let depth0 = load_depth(px, dims);
+    let dims = vec2<i32>(textureDimensions(depth_tex));
+    let vp   = viewport_bounds(input.pos.xy, input.ndc, ndc_per_px);
+    let px   = vec2<i32>(input.pos.xy);
+
+    let depth0 = load_depth(px, dims, vp);
 
     // Sky / background: nothing to occlude, return unoccluded white.
     if depth0 >= 1.0 { return vec4<f32>(1., 1., 1., 1.); }
@@ -94,23 +119,22 @@ fn fs_ssao(input: VOut) -> @location(0) vec4<f32> {
     let dx = vec2<i32>(1, 0);
     let dy = vec2<i32>(0, 1);
 
-    let depth_r = load_depth(px + dx, dims);
-    let depth_l = load_depth(px - dx, dims);
-    let depth_u = load_depth(px + dy, dims);
-    let depth_d = load_depth(px - dy, dims);
+    let depth_r = load_depth(px + dx, dims, vp);
+    let depth_l = load_depth(px - dx, dims, vp);
+    let depth_u = load_depth(px + dy, dims, vp);
+    let depth_d = load_depth(px - dy, dims, vp);
 
     let use_right = abs(depth_r - depth0) < abs(depth_l - depth0);
     let use_down  = abs(depth_u - depth0) < abs(depth_d - depth0);
 
-    // Differentiate NDC space with respect to screen pixels
-    let ndc_dx = dpdx(input.ndc.x);
-    let ndc_dy = dpdy(input.ndc.y);
+    let h_off = vec2<f32>(ndc_per_px.x, 0.);
+    let v_off = vec2<f32>(0., ndc_per_px.y);
 
-    let h_ndc   = select(input.ndc - vec2<f32>(ndc_dx, 0.0), input.ndc + vec2<f32>(ndc_dx, 0.0), use_right);
+    let h_ndc   = select(input.ndc - h_off, input.ndc + h_off, use_right);
     let h_depth = select(depth_l, depth_r, use_right);
     let h_sign  = select(-1.0, 1.0, use_right);
 
-    let v_ndc   = select(input.ndc - vec2<f32>(0.0, ndc_dy), input.ndc + vec2<f32>(0.0, ndc_dy), use_down);
+    let v_ndc   = select(input.ndc - v_off, input.ndc + v_off, use_down);
     let v_depth = select(depth_d, depth_u, use_down);
     let v_sign  = select(-1.0, 1.0, use_down);
 
@@ -130,8 +154,13 @@ fn fs_ssao(input: VOut) -> @location(0) vec4<f32> {
     }
     let bitangent = cross(normal, tangent);
 
-    // Per-pixel random rotation angle to break up the fixed kernel pattern.
-    let rot_angle = hash21(input.pos.xy) * 6.283185;
+    // Kernel rotation angle, keyed to a 4×4 screen tile so the blur pass can average
+    // all 16 of them back out. The golden-ratio stride keeps neighbouring pixels far
+    // apart in angle both horizontally (index +1) and vertically (index +4), which is
+    // what stops the tile itself from showing up as a pattern.
+    let tile      = px & vec2<i32>(3, 3);
+    let tile_idx  = f32(tile.y * 4 + tile.x);
+    let rot_angle = fract(tile_idx * 0.6180339887) * 6.283185;
 
     let linear0 = linearize(depth0);
 
@@ -166,6 +195,12 @@ fn fs_ssao(input: VOut) -> @location(0) vec4<f32> {
         0.6602, 0.7656, 0.8789, 1.0000,
     );
 
+    // Self-occlusion bias in linear view-space distance. A constant bias in raw
+    // depth-buffer units is scale-dependent — the same delta spans a hair's width up
+    // close and metres far away — which is what produced speckled acne on curved
+    // surfaces. Scaling with distance tracks how depth precision actually degrades.
+    let bias_linear = su.bias * linear0;
+
     var occlusion = 0.0;
     let num_samples = 16;
 
@@ -195,11 +230,10 @@ fn fs_ssao(input: VOut) -> @location(0) vec4<f32> {
 
         // Find exactly which physical window pixel this projected coordinate maps to
         let delta_ndc = ndc_xy - input.ndc;
-        let sample_px_f = input.pos.xy + vec2<f32>(delta_ndc.x / ndc_dx, delta_ndc.y / ndc_dy);
-        let sample_px = vec2<i32>(sample_px_f);
+        let sample_px = vec2<i32>(input.pos.xy + delta_ndc / ndc_per_px);
 
         // Fetch geometry depth at the projected location.
-        let geom_depth = load_depth(sample_px, dims);
+        let geom_depth = load_depth(sample_px, dims, vp);
 
         // Range check: suppress contributions from surfaces far away in depth
         // (avoids halos at depth discontinuities).
@@ -208,7 +242,7 @@ fn fs_ssao(input: VOut) -> @location(0) vec4<f32> {
         let range_check = smoothstep(0.0, 1.0, su.radius / abs(linear0 - linear_geom));
 
         // Occluded when geometry is closer to the camera than the sample point.
-        if geom_depth < sample_depth - su.bias {
+        if linear_geom < linear_sample - bias_linear {
             occlusion += range_check;
         }
     }

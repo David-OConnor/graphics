@@ -25,7 +25,10 @@ use winit::{
 
 use crate::{
     EntityUpdate,
-    graphics::{GraphicsState, create_contour_bind_group, create_ssao_bind_group},
+    graphics::{
+        GraphicsState, create_contour_bind_group, create_ssao_bind_group,
+        create_ssao_blur_bind_group,
+    },
     gui::GuiState,
     texture::Texture,
     types::{EngineUpdates, GraphicsSettings, Scene, UiSettings},
@@ -33,6 +36,9 @@ use crate::{
 
 pub const COLOR_FORMAT: TextureFormat = TextureFormat::Bgra8UnormSrgb;
 pub const DEPTH_FORMAT: TextureFormat = TextureFormat::Depth32Float;
+/// Ambient-occlusion buffer written by the SSAO pass and blurred into the scene by the
+/// composite pass. Single channel: the pass outputs a grey multiplier, not a colour.
+pub const SSAO_FORMAT: TextureFormat = TextureFormat::R8Unorm;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum UserEvent {
@@ -290,6 +296,16 @@ where
                 &graphics.layout_ssao,
                 &graphics.depth_texture_contour.view,
                 &graphics.ssao_uniform_buf,
+            );
+
+            graphics.ssao_texture =
+                Texture::create_ssao_texture(&sys.device, &sys.surface_cfg, "SSAO texture");
+            graphics.bind_group_ssao_blur = create_ssao_blur_bind_group(
+                &sys.device,
+                &graphics.layout_ssao_blur,
+                &graphics.depth_texture_contour.view,
+                &graphics.ssao_uniform_buf,
+                &graphics.ssao_texture.view,
             );
 
             if let Some(t) = &mut graphics.msaa_texture {
