@@ -32,10 +32,10 @@ struct SsaoUniforms {
 @group(0) @binding(1) var<uniform> su: SsaoUniforms;
 
 struct VOut {
-    @builtin(position) pos: vec4<f32>,
+    @builtin(position) pos: vec4<f32>, // Full-screen triangle: no vertex buffer needed.
+    @location(0) ndc: vec2<f32>,       // True rasterizer-injected NDC space
 }
 
-// Full-screen triangle: no vertex buffer needed.
 @vertex
 fn vs_ssao(@builtin(vertex_index) vi: u32) -> VOut {
     var positions = array<vec2<f32>, 3>(
@@ -43,7 +43,8 @@ fn vs_ssao(@builtin(vertex_index) vi: u32) -> VOut {
         vec2<f32>( 3., -1.),
         vec2<f32>(-1.,  3.),
     );
-    return VOut(vec4<f32>(positions[vi], 0., 1.));
+    let p = positions[vi];
+    return VOut(vec4<f32>(p, 0., 1.), p);
 }
 
 fn load_depth(px: vec2<i32>, dims: vec2<i32>) -> f32 {
@@ -56,11 +57,9 @@ fn linearize(d: f32) -> f32 {
     return su.near * su.far / (su.far - d * (su.far - su.near));
 }
 
-// Reconstruct world-space position from a screen UV (0..1) and raw depth value.
-fn world_from_depth(uv: vec2<f32>, depth: f32) -> vec3<f32> {
-    // wgpu NDC: x ∈ [-1,1] (left→right), y ∈ [-1,1] (bottom→top), depth ∈ [0,1].
-    // Screen UV: (0,0) = top-left, so y must be flipped.
-    let ndc = vec4<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0);
+// Reconstruct world-space position directly from proper NDC space.
+fn world_from_depth(ndc_xy: vec2<f32>, depth: f32) -> vec3<f32> {
+    let ndc = vec4<f32>(ndc_xy, depth, 1.0);
     let world_h = su.proj_view_inv * ndc;
     return world_h.xyz / world_h.w;
 }
@@ -78,17 +77,16 @@ fn rot2(v: vec2<f32>, a: f32) -> vec2<f32> {
 }
 
 @fragment
-fn fs_ssao(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
+fn fs_ssao(input: VOut) -> @location(0) vec4<f32> {
     let dims  = vec2<i32>(textureDimensions(depth_tex));
-    let fdims = vec2<f32>(f32(dims.x), f32(dims.y));
-    let px    = vec2<i32>(i32(frag_pos.x), i32(frag_pos.y));
-    let uv    = frag_pos.xy / fdims;
+    let px    = vec2<i32>(input.pos.xy);
 
     let depth0 = load_depth(px, dims);
+
     // Sky / background: nothing to occlude, return unoccluded white.
     if depth0 >= 1.0 { return vec4<f32>(1., 1., 1., 1.); }
 
-    let pos0 = world_from_depth(uv, depth0);
+    let pos0 = world_from_depth(input.ndc, depth0);
 
     // ── Normal reconstruction from neighbouring depth samples ────────────────
     // Pick the neighbour that is closest in depth on each axis (avoids artefacts
@@ -104,18 +102,20 @@ fn fs_ssao(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
     let use_right = abs(depth_r - depth0) < abs(depth_l - depth0);
     let use_down  = abs(depth_u - depth0) < abs(depth_d - depth0);
 
-    let h_uv    = select((frag_pos.xy + vec2(-1., 0.)) / fdims,
-                         (frag_pos.xy + vec2( 1., 0.)) / fdims, use_right);
+    // Differentiate NDC space with respect to screen pixels
+    let ndc_dx = dpdx(input.ndc.x);
+    let ndc_dy = dpdy(input.ndc.y);
+
+    let h_ndc   = select(input.ndc - vec2<f32>(ndc_dx, 0.0), input.ndc + vec2<f32>(ndc_dx, 0.0), use_right);
     let h_depth = select(depth_l, depth_r, use_right);
     let h_sign  = select(-1.0, 1.0, use_right);
 
-    let v_uv    = select((frag_pos.xy + vec2(0., -1.)) / fdims,
-                         (frag_pos.xy + vec2( 0., 1.)) / fdims, use_down);
+    let v_ndc   = select(input.ndc - vec2<f32>(0.0, ndc_dy), input.ndc + vec2<f32>(0.0, ndc_dy), use_down);
     let v_depth = select(depth_d, depth_u, use_down);
     let v_sign  = select(-1.0, 1.0, use_down);
 
-    let tang  = (world_from_depth(h_uv, h_depth) - pos0) * h_sign;
-    let btng  = (world_from_depth(v_uv, v_depth) - pos0) * v_sign;
+    let tang  = (world_from_depth(h_ndc, h_depth) - pos0) * h_sign;
+    let btng  = (world_from_depth(v_ndc, v_depth) - pos0) * v_sign;
     var normal = normalize(cross(tang, btng));
 
     // Ensure normal faces the camera.
@@ -131,7 +131,7 @@ fn fs_ssao(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
     let bitangent = cross(normal, tangent);
 
     // Per-pixel random rotation angle to break up the fixed kernel pattern.
-    let rot_angle = hash21(frag_pos.xy) * 6.283185;
+    let rot_angle = hash21(input.pos.xy) * 6.283185;
 
     let linear0 = linearize(depth0);
 
@@ -189,15 +189,16 @@ fn fs_ssao(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
         let ndc_xy        = clip.xy / clip.w;
         let sample_depth  = clip.z  / clip.w;   // depth in [0,1] for LH proj
 
-        // Convert NDC to screen UV (y flipped: NDC +1 = top = UV 0).
-        let sample_uv = ndc_xy * vec2<f32>(0.5, -0.5) + 0.5;
-
-        // Discard out-of-screen and behind-near-plane samples.
-        if any(sample_uv < vec2<f32>(0.0)) || any(sample_uv > vec2<f32>(1.0)) { continue; }
+        // Discard out-of-viewport and behind-near-plane samples.
+        if any(ndc_xy < vec2<f32>(-1.0)) || any(ndc_xy > vec2<f32>(1.0)) { continue; }
         if sample_depth < 0.0 || sample_depth > 1.0 { continue; }
 
+        // Find exactly which physical window pixel this projected coordinate maps to
+        let delta_ndc = ndc_xy - input.ndc;
+        let sample_px_f = input.pos.xy + vec2<f32>(delta_ndc.x / ndc_dx, delta_ndc.y / ndc_dy);
+        let sample_px = vec2<i32>(sample_px_f);
+
         // Fetch geometry depth at the projected location.
-        let sample_px  = vec2<i32>(i32(sample_uv.x * fdims.x), i32(sample_uv.y * fdims.y));
         let geom_depth = load_depth(sample_px, dims);
 
         // Range check: suppress contributions from surfaces far away in depth
