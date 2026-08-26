@@ -429,6 +429,11 @@ where
                 eprintln!("Unable to save graphics pipeline cache: {error}");
             }
         }
+
+        // drop order is mandatory in Linux/Wayland
+        self.gui = None;
+        self.render = None;
+        self.graphics = None;
     }
 }
 
