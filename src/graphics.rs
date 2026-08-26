@@ -1432,6 +1432,10 @@ impl GraphicsState {
         self.ensure_gaussian_pipeline(device);
         let request_redraw = updates_gui.request_redraw;
 
+        // Calculate the actual 3D viewport restricted by the GUI
+        let (vp_x, vp_y, vp_width, vp_height) =
+            viewport_rect(gui.size, width, height, ui_settings, 0.);
+
         // Geometry prepass: render opaque geometry into the 1-sample depth texture used
         // by both contour lines and SSAO.
         let contours_active = self.depth_revealing > 0. || self.intersection_revealing > 0.;
@@ -1453,6 +1457,8 @@ impl GraphicsState {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+
+            pre.set_viewport(vp_x, vp_y, vp_width, vp_height, 0., 1.);
             pre.set_pipeline(&self.pipeline_contour_depth);
             pre.set_bind_group(0, &self.bind_groups.cam, &[]);
             pre.set_vertex_buffer(0, self.vertex_buf.slice(..));
@@ -1521,6 +1527,8 @@ impl GraphicsState {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+
+            overlay.set_viewport(vp_x, vp_y, vp_width, vp_height, 0., 1.);
             overlay.set_pipeline(pipeline);
             overlay.set_bind_group(0, &self.bind_group_contour, &[]);
             overlay.draw(0..3, 0..1); // full-screen triangle
@@ -1546,6 +1554,8 @@ impl GraphicsState {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+
+            overlay.set_viewport(vp_x, vp_y, vp_width, vp_height, 0., 1.);
             overlay.set_pipeline(&self.pipeline_ssao);
             overlay.set_bind_group(0, &self.bind_group_ssao, &[]);
             overlay.draw(0..3, 0..1); // full-screen triangle
