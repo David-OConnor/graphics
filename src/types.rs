@@ -549,6 +549,14 @@ pub enum FramerateDisplay {
 pub struct GraphicsSettings {
     pub msaa_samples: u32,
     pub ambient_occlusion: AmbientOcclusion,
+    /// World-space radius of the SSAO sample hemisphere: how far from each pixel we look
+    /// for occluders. Ignored unless `ambient_occlusion` is `Ssao`.
+    ///
+    /// This is in scene units, not pixels, so it depends on how big your geometry is —
+    /// roughly the size of the crevices you want shaded. The 0.7 default suits scenes
+    /// built around unit-scale objects. Too small and only tight creases darken; too
+    /// large and the effect turns into broad, flat shading that ignores fine detail.
+    pub ssao_radius: f32,
     /// Also known as cast shadows
     pub self_shadowing: bool,
     /// None = disabled. Some(strength) enables edge cueing at the given intensity (0.0–1.0 typical).
@@ -571,6 +579,7 @@ impl Default for GraphicsSettings {
             self_shadowing: true,
             edge_cueing: None,
             ambient_occlusion: AmbientOcclusion::Ssao,
+            ssao_radius: 0.7,
             depth_aware_halos: None,
             depth_revealing_contour_lines: None,
             intersection_revealing_contour_lines: None,

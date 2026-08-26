@@ -65,6 +65,7 @@ fn linearize(d: f32) -> f32 {
 }
 
 // 4×4 box: offsets -2..1 on each axis cover one full noise tile.
+// LO = -1 and HI = 0 produces a less smooth/more pixelated effect.
 const TAP_LO: i32 = -2;
 const TAP_HI: i32 =  1;
 

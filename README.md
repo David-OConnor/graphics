@@ -366,12 +366,28 @@ You can update graphics settings during application run by passing a `Some(Graph
 Settings available. See the [GraphicsSettings docs page](https://docs.rs/graphics/latest/graphics/struct.GraphicsSettings.html) for details:
 
 - MSAA
-- Ambient occlusion
+- Ambient occlusion, and its sample radius
 - Self shadowing
 - Edge cueing
 - Depth-aware halos
 - Depth revealing contour lines
 - Intersection-revealing contour lines
 - A framerate counter.
+
+One setting worth calling out, because its useful range depends on your scene rather than
+on taste: `ssao_radius` is the world-space radius of the ambient-occlusion sample
+hemisphere — how far from each pixel the renderer looks for occluders. It's in scene units,
+not pixels, so set it to roughly the size of the crevices you want shaded. The default of
+`0.7` suits scenes built around unit-scale objects; if your geometry is much larger or
+smaller than that, scale it to match. Too small and only tight creases darken; too large and
+the effect flattens into broad shading that misses fine detail.
+
+```rust
+let settings = GraphicsSettings {
+    ambient_occlusion: AmbientOcclusion::Ssao,
+    ssao_radius: 0.7,
+    ..Default::default()
+};
+```
 
 ![Mol viewer screenshot](screenshots/mol_viewer_2025.png)

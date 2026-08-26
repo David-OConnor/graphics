@@ -154,6 +154,8 @@ pub(crate) struct GraphicsState {
     pub intersection_revealing: f32,
     /// 0.0 = SSAO disabled; > 0 enables the SSAO overlay.
     pub ssao_strength: f32,
+    /// World-space SSAO sample radius. From `GraphicsSettings::ssao_radius`.
+    pub ssao_radius: f32,
     /// Current MSAA sample count, kept in sync so resize and MSAA changes are consistent.
     pub msaa_samples: u32,
     /// When set, the event loop will recreate MSAA-dependent resources (pipelines, textures,
@@ -663,6 +665,9 @@ impl GraphicsState {
             depth_revealing: 0.,
             intersection_revealing: 0.,
             ssao_strength: 0.,
+            // Overwritten by the first `apply_graphics_settings`; matches its default so a
+            // scene rendered before then doesn't use a degenerate radius.
+            ssao_radius: 0.7,
             msaa_samples,
             pending_msaa: None,
             surface_cfg: surface_cfg.clone(),
@@ -1037,7 +1042,9 @@ impl GraphicsState {
             self.scene.camera.position,
             self.scene.camera.near,
             self.scene.camera.far,
-            0.5,  // world-space sample radius
+            // Raise the radius to make the SSAO more prominent. It's scene-scale dependent,
+            // hence `GraphicsSettings::ssao_radius` rather than a constant.
+            self.ssao_radius,
             0.01, // self-occlusion bias, as a fraction of the pixel's view distance
             self.ssao_strength,
         );
@@ -1144,6 +1151,10 @@ impl GraphicsState {
             AmbientOcclusion::Ssao => 1.5,
             _ => 0.0,
         };
+        // The shader divides by the radius when range-checking a sample against geometry at
+        // the same depth, so a literal 0 yields 0/0. Clamping keeps that off the table
+        // without a branch in the inner loop.
+        self.ssao_radius = settings.ssao_radius.max(f32::EPSILON);
 
         // ── Frame rate display ────────────────────────────────────────────────
         if self.framerate_display != settings.display_framerate {
