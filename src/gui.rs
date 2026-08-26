@@ -64,6 +64,19 @@ impl GuiState {
         }
     }
 
+    /// True while EGUI owns the pointer: it's hovering one of its areas (panel, window, popup)
+    /// with no button held, or a click or drag that started on one of its widgets is still in
+    /// progress.
+    ///
+    /// The drag half is the important one: it stays true for the whole of e.g. a slider drag,
+    /// including after the pointer wanders off the widget, or out of the panel entirely. That's
+    /// what lets us keep the same drag from also driving the camera. It's the complement of
+    /// `mouse_in_gui`, which only knows about the rectangle the UI reserves, and so misses
+    /// floating windows over the 3D view.
+    pub(crate) fn owns_pointer(&self) -> bool {
+        self.egui_state.egui_ctx().egui_wants_pointer_input()
+    }
+
     /// This function contains code specific to rendering the GUI prior to the render pass.
     pub(crate) fn render_gui_pre_rpass<T>(
         &mut self,

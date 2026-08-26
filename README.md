@@ -33,6 +33,9 @@ Example boilerplate below. Calling `render(state)` starts an event loop. The app
 through the `_handler` callbacks; each frame, each hardware event, or through the GUI. Each of these return an 
 `EngineUpdates` struct, which determines if entities, meshes, lighting, or the camera needs to be refreshed.
 
+Note that basic keyboard and mouse camera controls are included by default, without explicitly
+setting them in the Device and Window event handlers.
+
 ```rust
 //! This module integrations this application with the graphics engine.
 
@@ -131,9 +134,6 @@ fn cam_controls(
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
-    // todo: Here and at init, set the camera dist dynamically based on mol size.
-    // todo: Set the position not relative to 0, but  relative to the center of the atoms.
-
     let mut changed = false;
 
     ui.horizontal(|ui| {

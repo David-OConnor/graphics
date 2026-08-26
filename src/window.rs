@@ -10,7 +10,7 @@ use image::ImageError;
 use wgpu::TextureViewDescriptor;
 use winit::{
     application::ApplicationHandler,
-    event::{DeviceEvent, DeviceId, WindowEvent},
+    event::{DeviceEvent, DeviceId, ElementState, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow},
     window::{Icon, WindowAttributes, WindowId},
 };
@@ -29,6 +29,31 @@ fn frame_delta(elapsed: Duration, continuous_redraw: bool) -> Duration {
     } else {
         IDLE_WAKE_DT_MAX
     })
+}
+
+/// Pointer input that belongs to EGUI alone while it owns the pointer, e.g. for the duration of a
+/// slider drag. Suppressing these is what stops such a drag from panning or rotating the camera at
+/// the same time.
+///
+/// Button *releases* are deliberately absent: they only ever clear latched state (free look, and
+/// the application's own click-drag flags), so swallowing one would leave the camera stuck mid-drag
+/// after the slider is let go.
+fn egui_owns_event_win(event: &WindowEvent) -> bool {
+    match event {
+        WindowEvent::MouseInput { state, .. } => *state == ElementState::Pressed,
+        WindowEvent::MouseWheel { .. } => true,
+        _ => false,
+    }
+}
+
+/// Device-event counterpart to [`egui_owns_event_win`]. `MouseMotion` is the one that matters most:
+/// it's what feeds camera rotation and application-level click-drag handlers.
+fn egui_owns_event_dev(event: &DeviceEvent) -> bool {
+    match event {
+        DeviceEvent::Button { state, .. } => *state == ElementState::Pressed,
+        DeviceEvent::MouseMotion { .. } | DeviceEvent::MouseWheel { .. } => true,
+        _ => false,
+    }
 }
 
 fn load_icon(path: &Path) -> Result<Icon, ImageError> {
@@ -221,7 +246,9 @@ where
         let graphics = &mut self.graphics.as_mut().unwrap();
         let gui = &mut self.gui.as_mut().unwrap();
 
-        if !gui.mouse_in_gui {
+        let for_egui = gui.owns_pointer() && egui_owns_event_win(&event);
+
+        if !gui.mouse_in_gui && !for_egui {
             graphics.handle_input_window(&event, &self.scene.input_settings);
 
             // Handle events processed by the application
@@ -372,7 +399,9 @@ where
         let graphics = &mut self.graphics.as_mut().unwrap();
         let gui = &mut self.gui.as_mut().unwrap();
 
-        if !gui.mouse_in_gui {
+        let for_egui = gui.owns_pointer() && egui_owns_event_dev(&event);
+
+        if !gui.mouse_in_gui && !for_egui {
             // Handle events processed by this engine.
             graphics.handle_input_device(&event, &self.scene.input_settings);
             let inputs_present = graphics.inputs_commanded.inputs_present();
