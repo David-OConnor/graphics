@@ -553,8 +553,8 @@ pub struct GraphicsSettings {
     /// for occluders. Ignored unless `ambient_occlusion` is `Ssao`.
     ///
     /// This is in scene units, not pixels, so it depends on how big your geometry is —
-    /// roughly the size of the crevices you want shaded. The 0.7 default suits scenes
-    /// built around unit-scale objects. Too small and only tight creases darken; too
+    /// roughly the size of the crevices you want shaded. The 2.0 default suits scenes
+    /// built around objects slightly larger than unit-scale. Too small and only tight creases darken; too
     /// large and the effect turns into broad, flat shading that ignores fine detail.
     pub ssao_radius: f32,
     /// Also known as cast shadows
@@ -579,7 +579,7 @@ impl Default for GraphicsSettings {
             self_shadowing: true,
             edge_cueing: None,
             ambient_occlusion: AmbientOcclusion::Ssao,
-            ssao_radius: 0.7,
+            ssao_radius: 2.0,
             depth_aware_halos: None,
             depth_revealing_contour_lines: None,
             intersection_revealing_contour_lines: None,
