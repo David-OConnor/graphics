@@ -11,7 +11,9 @@ use winit::window::Window;
 
 use crate::{
     graphics::GraphicsState,
-    types::{EngineUpdates, Scene},
+    text_overlay::{draw_framerate, draw_text_overlay},
+    types::{EngineUpdates, Scene, UiSettings},
+    vector_overlay::draw_vector_overlays,
 };
 
 /// State related to the GUI.
@@ -87,6 +89,7 @@ impl GuiState {
         mut gui_handler: impl FnMut(&mut T, &mut Ui, &mut Scene) -> EngineUpdates,
         encoder: &mut CommandEncoder,
         queue: &Queue,
+        ui_settings: &UiSettings,
         width: u32,
         height: u32,
         updates_gui: &mut EngineUpdates,
@@ -104,8 +107,9 @@ impl GuiState {
 
         let raw_input = self.egui_state.take_egui_input(&graphics.window);
 
-        // let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
-        let mut full_output = self.egui_state.egui_ctx().run_ui(raw_input, |ui| {
+        // Clone the cheap context handle so the closure can also update the other GuiState fields.
+        let ctx = self.egui_state.egui_ctx().clone();
+        let mut full_output = ctx.run_ui(raw_input, |ui| {
             *updates_gui = gui_handler(user_state, ui, &mut graphics.scene);
 
             let new_size = updates_gui.ui_reserved_px;
@@ -118,6 +122,13 @@ impl GuiState {
                 // the application.
                 graphics.scene.gui_size = self.size;
             }
+
+            // Submit overlays before egui ends and tessellates this pass. Submitting them afterward
+            // leaves them queued for a later frame, which is visible when an overlay follows a
+            // moving camera.
+            draw_text_overlay(graphics, &ctx, self.size, ui_settings, width, height);
+            draw_vector_overlays(graphics, &ctx, ui_settings, self.size, width, height);
+            draw_framerate(graphics, &ctx, self.size, ui_settings, width, height);
         });
 
         // Take these fields rather than cloning them; the caller only needs

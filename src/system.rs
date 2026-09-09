@@ -204,6 +204,7 @@ where
             meshes: std::mem::take(&mut self.scene.meshes),
             gaussians: std::mem::take(&mut self.scene.gaussians),
             entities: std::mem::take(&mut self.scene.entities),
+            vector_overlays: std::mem::take(&mut self.scene.vector_overlays),
             camera: self.scene.camera.clone(),
             lighting: self.scene.lighting.clone(),
             input_settings: self.scene.input_settings.clone(),

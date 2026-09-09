@@ -9,7 +9,7 @@ use wgpu::{VertexAttribute, VertexBufferLayout, VertexFormat};
 
 use crate::{
     EntityUpdate, camera::Camera, gauss::Gaussian, lighting::Lighting, text_overlay::TextOverlay,
-    viewport_rect,
+    vector_overlay::VectorOverlay, viewport_rect,
 };
 
 // These sizes are in bytes. We do this, since that's the data format expected by the shader.
@@ -395,6 +395,8 @@ pub struct Scene {
     pub meshes: Vec<Mesh>,
     pub gaussians: Vec<Gaussian>,
     pub entities: Vec<Entity>,
+    /// View-only vector graphics composited over the 3D viewport.
+    pub vector_overlays: Vec<VectorOverlay>,
     pub camera: Camera,
     pub lighting: Lighting,
     pub input_settings: InputSettings,
@@ -411,6 +413,7 @@ impl Default for Scene {
             meshes: Vec::new(),
             gaussians: Vec::new(),
             entities: Vec::new(),
+            vector_overlays: Vec::new(),
             camera: Default::default(),
             lighting: Default::default(),
             input_settings: Default::default(),

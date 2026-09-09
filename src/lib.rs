@@ -24,6 +24,7 @@ mod system;
 mod text_overlay;
 mod texture;
 mod types;
+mod vector_overlay;
 mod window;
 
 pub use camera::Camera;
@@ -37,6 +38,9 @@ pub use types::{
     AmbientOcclusion, ControlScheme, EngineUpdates, Entity, FramerateDisplay, GraphicsSettings,
     InputSettings, Mesh, Scene, ScrollBehavior, UiLayoutSides, UiLayoutTopBottom, UiSettings,
     Vertex,
+};
+pub use vector_overlay::{
+    OverlayAnchor, OverlayColor, OverlayPoint, OverlayPrimitive, OverlayStroke, VectorOverlay,
 };
 pub use window::viewport_rect;
 // Re-export winit DeviceEvents for use in the API; this prevents the calling

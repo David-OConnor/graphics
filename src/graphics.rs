@@ -35,7 +35,6 @@ use crate::{
     gui::GuiState,
     input::{self, InputsCommanded},
     system::{COLOR_FORMAT, DEPTH_FORMAT, SSAO_FORMAT, process_engine_updates},
-    text_overlay::{draw_framerate, draw_text_overlay},
     texture::Texture,
     types::{
         AmbientOcclusion, ControlScheme, EngineUpdates, FramerateDisplay, GraphicsSettings,
@@ -1490,21 +1489,19 @@ impl GraphicsState {
 
         let mut updates_gui = Default::default();
 
-        let (mut gui_full_output, tris, screen_descriptor, resize_required) = gui.render_gui_pre_rpass(
-            self,
-            user_state,
-            device,
-            gui_handler,
-            &mut encoder,
-            queue,
-            width,
-            height,
-            &mut updates_gui,
-        );
-
-        // Draw text on the screen.
-        draw_text_overlay(self, gui, ui_settings, width, height);
-        draw_framerate(self, gui, ui_settings, width, height);
+        let (mut gui_full_output, tris, screen_descriptor, resize_required) = gui
+            .render_gui_pre_rpass(
+                self,
+                user_state,
+                device,
+                gui_handler,
+                &mut encoder,
+                queue,
+                ui_settings,
+                width,
+                height,
+                &mut updates_gui,
+            );
 
         // Note: If we process engine updates after setting up the render pass, we will not be
         // able to add meshes at runtime; code run from the `engine_updates.meshes` flag must be

@@ -1,11 +1,9 @@
 //! For drawing text on over 3D graphics, using EGUI's painer.
 
-use egui::{Align2, Color32, FontFamily, FontId, Pos2};
+use egui::{Align2, Color32, Context, FontFamily, FontId, Pos2};
 use lin_alg::f32::{Vec3, Vec4};
 
-use crate::{
-    UiSettings, graphics::GraphicsState, gui::GuiState, types::FramerateDisplay, viewport_rect,
-};
+use crate::{UiSettings, graphics::GraphicsState, types::FramerateDisplay, viewport_rect};
 
 #[derive(Debug, Clone)]
 pub struct TextOverlay {
@@ -29,20 +27,19 @@ impl Default for TextOverlay {
 
 pub(crate) fn draw_text_overlay(
     graphics_state: &GraphicsState,
-    gui: &GuiState,
+    ctx: &Context,
+    gui_size: (f32, f32),
     ui_settings: &UiSettings,
     // These are in physical pixels.
     width: u32,
     height: u32,
 ) {
-    let ctx = gui.egui_state.egui_ctx();
-
     // Compute label positions in screen space
     let labels = graphics_state.collect_entity_labels(
         width,
         height,
         ui_settings,
-        gui.size,
+        gui_size,
         ctx.pixels_per_point(),
     );
 
@@ -73,7 +70,8 @@ pub(crate) fn draw_text_overlay(
 /// `GraphicsSettings::display_framerate`.
 pub(crate) fn draw_framerate(
     graphics_state: &GraphicsState,
-    gui: &GuiState,
+    ctx: &Context,
+    gui_size: (f32, f32),
     ui_settings: &UiSettings,
     // These are in physical pixels.
     width: u32,
@@ -86,7 +84,6 @@ pub(crate) fn draw_framerate(
         return;
     }
 
-    let ctx = gui.egui_state.egui_ctx();
     let pixels_per_pt = ctx.pixels_per_point();
 
     // Convert physical pixels to logical pixels (egui points), as with `world_to_screen`.
@@ -94,7 +91,7 @@ pub(crate) fn draw_framerate(
     let logical_height = (height as f32 / pixels_per_pt).round() as u32;
 
     let (x, y, eff_width, eff_height) = viewport_rect(
-        gui.size,
+        gui_size,
         logical_width,
         logical_height,
         ui_settings,

@@ -358,6 +358,25 @@ entity.overlay_text = Some(TextOverlay {
 entity.class = mol.mol_type().entity_type() as u32;
 ```
 
+For screen-space lines, circles, polygons, and text, add a `VectorOverlay` to
+`Scene::vector_overlays`. Primitives use logical pixels relative to a viewport or world-space
+anchor and are clipped to the 3D viewport by default:
+
+```rust
+use graphics::{
+    OverlayAnchor, OverlayPrimitive, OverlayStroke, Scene, VectorOverlay,
+};
+use lin_alg::f32::Vec3;
+
+let mut axes = VectorOverlay::new(OverlayAnchor::World(Vec3::new(0., 0., 0.)));
+axes.primitives.push(OverlayPrimitive::Line {
+    start: (0., 0.),
+    end: (40., 0.),
+    stroke: OverlayStroke::new(2., (235, 78, 78, 255)),
+});
+scene.vector_overlays.push(axes);
+```
+
 ![Molchanica example of a ribbon-protein render, and GUI](screenshots/molchanica_ribbon_view.png)
 
 ## Graphics settings
