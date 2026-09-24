@@ -157,6 +157,40 @@ fn vs_main(
     return result;
 }
 
+struct OutlineMaskOut {
+    @builtin(position) clip_posit: vec4<f32>,
+    // rgb: Outline color. a: Outline thickness, in logical pixels.
+    @location(0) @interpolate(flat) outline: vec4<f32>,
+}
+
+// Outline mask pass: Writes each outlined entity's silhouette into the mask texture read by
+// shader_outline.wgsl. The instance color and opacity slots carry the outline color and
+// thickness; see `Instance::new_outline`.
+@vertex
+fn vs_outline_mask(
+    vertex_in: VertexIn,
+    instance: InstanceIn,
+) -> OutlineMaskOut {
+    let model_mat = mat4x4<f32>(
+        instance.model_matrix_0,
+        instance.model_matrix_1,
+        instance.model_matrix_2,
+        instance.model_matrix_3,
+    );
+
+    var result: OutlineMaskOut;
+
+    result.clip_posit = camera.proj_view * model_mat * vec4<f32>(vertex_in.position, 1.0);
+    result.outline = instance.color;
+
+    return result;
+}
+
+@fragment
+fn fs_outline_mask(vertex: OutlineMaskOut) -> @location(0) vec4<f32> {
+    return vertex.outline;
+}
+
 // Unused
 //fn fxaa(uv: vec2<f32>) -> vec3<f32> {
 //    let color = textureSample(scene_texture, scene_sampler, uv).rgb;

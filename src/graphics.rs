@@ -34,12 +34,13 @@ use crate::{
     gauss::{CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT, QUAD_VERTICES},
     gui::GuiState,
     input::{self, InputsCommanded},
+    outline::OutlineState,
     system::{COLOR_FORMAT, DEPTH_FORMAT, SSAO_FORMAT, process_engine_updates},
     texture::Texture,
     types::{
         AmbientOcclusion, ControlScheme, EngineUpdates, FramerateDisplay, GraphicsSettings,
-        INSTANCE_LAYOUT, INSTANCE_SIZE, InputSettings, Instance, Scene, UiSettings, VERTEX_LAYOUT,
-        VERTEX_SIZE,
+        INSTANCE_LAYOUT, INSTANCE_SIZE, InputSettings, Instance, Mesh, Scene, UiSettings,
+        VERTEX_LAYOUT, VERTEX_SIZE,
     },
     viewport_rect,
 };
@@ -110,6 +111,8 @@ pub(crate) struct GraphicsState {
     instance_buf: Buffer,
     instance_buf_transparent: Buffer,
     instance_buf_gauss: Buffer,
+    /// For entities with outlines; drawn into the outline mask. See `outline.rs`.
+    instance_buf_outline: Buffer,
     pub bind_groups: BindGroupData,
     pub camera_buf: Buffer,
     /// Separate camera buffer for the depth-aware halo prepass (halo_expansion > 0).
@@ -135,6 +138,7 @@ pub(crate) struct GraphicsState {
     pub scene: Scene,
     mesh_mappings: Vec<(i32, u32, u32)>,
     mesh_mappings_transparent: Vec<(i32, u32, u32)>,
+    mesh_mappings_outline: Vec<(i32, u32, u32)>,
     pub window: Arc<Window>,
     /// World-space expansion (along normals) used in the halo prepass. 0 = disabled.
     pub halo_expansion: f32,
@@ -196,6 +200,10 @@ pub(crate) struct GraphicsState {
     fps_accum_time: f32,
     /// Frames counted in the current frame rate measurement window.
     fps_accum_frames: u32,
+    /// Created the first time the scene has outlined entities.
+    pub outline: Option<OutlineState>,
+    /// The thickest outline among entities, in logical pixels. Sets the outline search radius.
+    outline_max_thickness: f32,
 }
 
 /// How often the frame rate readout updates, in seconds. Averaging over this window
@@ -578,6 +586,12 @@ impl GraphicsState {
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
 
+        let instance_buf_outline = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Instance buffer outline"),
+            contents: &[], // empty on init
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        });
+
         let shader_gauss = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Graphics shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader_gauss.wgsl").into()),
@@ -626,6 +640,7 @@ impl GraphicsState {
         // Placeholder value
         let mesh_mappings = Vec::new();
         let mesh_mappings_transparent = Vec::new();
+        let mesh_mappings_outline = Vec::new();
 
         // todo: Logical (scaling by device?) vs physical pixels
         // let window_size = winit::dpi::LogicalSize::new(scene.window_size.0, scene.window_size.1);
@@ -644,6 +659,7 @@ impl GraphicsState {
             instance_buf,
             instance_buf_transparent,
             instance_buf_gauss: instance_gauss_buf,
+            instance_buf_outline,
             bind_groups,
             camera_buf: cam_buf,
             camera_buf_halo: cam_halo_buf,
@@ -688,6 +704,7 @@ impl GraphicsState {
             inputs_commanded: Default::default(),
             mesh_mappings,
             mesh_mappings_transparent,
+            mesh_mappings_outline,
             window,
             msaa_texture,
             halo_expansion: 0.,
@@ -695,6 +712,8 @@ impl GraphicsState {
             fps_value: 0.,
             fps_accum_time: 0.,
             fps_accum_frames: 0,
+            outline: None,
+            outline_max_thickness: 0.,
         };
 
         result.setup_vertices_indices(device);
@@ -827,6 +846,10 @@ impl GraphicsState {
         // queue.write_buffer call each, rather than one call per entity.
         let mut writes_opaque: Vec<(usize, [u8; INSTANCE_SIZE])> = Vec::new();
         let mut writes_transparent: Vec<(usize, [u8; INSTANCE_SIZE])> = Vec::new();
+        let mut writes_outline: Vec<(usize, [u8; INSTANCE_SIZE])> = Vec::new();
+
+        // Only grows here; a full rebuild recomputes it from scratch.
+        let mut outline_max_thickness = self.outline_max_thickness;
 
         for ent in ents_to_update {
             match update_type {
@@ -855,11 +878,24 @@ impl GraphicsState {
                 break;
             }
 
+            // Likewise if the entity gained or lost its outline.
+            if ent.outline.is_some() != ent.buf_i_outline.is_some() {
+                needs_full_rebuild = true;
+                break;
+            }
+
             let instance: Instance = ent.into();
             if ent.buf_is_transparent {
                 writes_transparent.push((slot, instance.to_bytes()));
             } else {
                 writes_opaque.push((slot, instance.to_bytes()));
+            }
+
+            if let (Some(outline), Some(slot_outline)) = (&ent.outline, ent.buf_i_outline) {
+                let instance_outline = Instance::new_outline(ent, outline);
+                writes_outline.push((slot_outline, instance_outline.to_bytes()));
+
+                outline_max_thickness = outline_max_thickness.max(outline.thickness);
             }
         }
 
@@ -870,9 +906,12 @@ impl GraphicsState {
             return;
         }
 
+        self.outline_max_thickness = outline_max_thickness;
+
         for (buf, mut writes) in [
             (&self.instance_buf, writes_opaque),
             (&self.instance_buf_transparent, writes_transparent),
+            (&self.instance_buf_outline, writes_outline),
         ] {
             if writes.is_empty() {
                 continue;
@@ -911,7 +950,10 @@ impl GraphicsState {
         // Bucket entity indices by mesh in a single pass, instead of scanning every
         // entity once per mesh.
         let mut ents_by_mesh: Vec<Vec<usize>> = vec![Vec::new(); n_meshes];
-        for (i, entity) in scene.entities.iter().enumerate() {
+        for (i, entity) in scene.entities.iter_mut().enumerate() {
+            // Set below, if this entity is outlined, and its mesh is valid.
+            entity.buf_i_outline = None;
+
             if entity.mesh < n_meshes {
                 ents_by_mesh[entity.mesh].push(i);
             }
@@ -919,26 +961,46 @@ impl GraphicsState {
 
         let mut instance_data = Vec::new();
         let mut instance_data_transparent = Vec::new();
+        let mut instance_data_outline = Vec::new();
 
         let mut mesh_mappings = Vec::with_capacity(n_meshes);
         let mut mesh_mappings_transparent = Vec::with_capacity(n_meshes);
+        let mut mesh_mappings_outline = Vec::with_capacity(n_meshes);
 
         let mut vertex_start_this_mesh = 0;
 
         let mut instance_start_this_mesh = 0;
         let mut instance_start_this_mesh_transparent = 0;
+        let mut instance_start_this_mesh_outline = 0;
 
         let mut i_opaque = 0;
         let mut i_transparent = 0;
+        let mut i_outline = 0;
+
+        let mut outline_max_thickness: f32 = 0.;
 
         // Build mesh-based instances.
         for (i, mesh) in scene.meshes.iter().enumerate() {
             let mut instance_count_this_mesh = 0;
             let mut instance_count_this_mesh_transparent = 0;
+            let mut instance_count_this_mesh_outline = 0;
 
             for &ent_i in &ents_by_mesh[i] {
                 let entity = &mut scene.entities[ent_i];
                 let instance: Instance = (&*entity).into();
+
+                // Outlined entities are drawn normally, below, and additionally into the
+                // outline mask.
+                if let Some(outline) = &entity.outline {
+                    let instance_outline = Instance::new_outline(entity, outline);
+                    instance_data_outline.extend_from_slice(&instance_outline.to_bytes());
+                    instance_count_this_mesh_outline += 1;
+
+                    outline_max_thickness = outline_max_thickness.max(outline.thickness);
+
+                    entity.buf_i_outline = Some(i_outline);
+                    i_outline += 1;
+                }
 
                 if entity.opacity < 0.99 {
                     instance_data_transparent.extend_from_slice(&instance.to_bytes());
@@ -970,14 +1032,23 @@ impl GraphicsState {
                 instance_count_this_mesh_transparent,
             ));
 
+            mesh_mappings_outline.push((
+                vertex_start_this_mesh,
+                instance_start_this_mesh_outline,
+                instance_count_this_mesh_outline,
+            ));
+
             vertex_start_this_mesh += mesh.vertices.len() as i32;
 
             instance_start_this_mesh += instance_count_this_mesh;
             instance_start_this_mesh_transparent += instance_count_this_mesh_transparent;
+            instance_start_this_mesh_outline += instance_count_this_mesh_outline;
         }
 
         self.mesh_mappings = mesh_mappings;
         self.mesh_mappings_transparent = mesh_mappings_transparent;
+        self.mesh_mappings_outline = mesh_mappings_outline;
+        self.outline_max_thickness = outline_max_thickness;
 
         // Build gaussian-based instances. (48 bytes per serialized GaussianInstance.)
         let mut instance_data_gauss = Vec::with_capacity(scene.gaussians.len() * 48);
@@ -1005,6 +1076,13 @@ impl GraphicsState {
             &mut self.instance_buf_gauss,
             &instance_data_gauss,
             "Instance buffer Gaussian",
+        );
+        upload_instance_data(
+            device,
+            queue,
+            &mut self.instance_buf_outline,
+            &instance_data_outline,
+            "Instance buffer outline",
         );
     }
 
@@ -1660,6 +1738,39 @@ impl GraphicsState {
             }
         }
 
+        // Outlines. After SSAO, so ambient occlusion doesn't darken them.
+        if self.instance_buf_outline.size() > 0 {
+            let outline = self.outline.get_or_insert_with(|| {
+                OutlineState::new(
+                    device,
+                    &self.surface_cfg,
+                    &self.shader_mesh,
+                    &self.bind_groups.layout_cam,
+                    self.pipeline_cache.as_ref(),
+                )
+            });
+
+            outline.render(
+                &mut encoder,
+                queue,
+                output_texture,
+                (vp_x, vp_y, vp_width, vp_height),
+                self.window.scale_factor() as f32,
+                self.outline_max_thickness,
+                &self.bind_groups.cam,
+                |pass| {
+                    draw_instances(
+                        pass,
+                        &self.scene.meshes,
+                        &self.vertex_buf,
+                        &self.index_buf,
+                        &self.instance_buf_outline,
+                        &self.mesh_mappings_outline,
+                    )
+                },
+            );
+        }
+
         // Egui pass – runs after all overlays so scene effects never paint over
         // the UI.  Always 1× MSAA so it never needs to be recreated when the
         // 3D MSAA level changes.
@@ -1695,6 +1806,36 @@ impl GraphicsState {
         queue.present(surface_texture);
 
         (resize_required, request_redraw)
+    }
+}
+
+/// Draw each mesh's instances from `inst_buf`. `mappings` holds (vertex start, instance start,
+/// instance count) for each mesh, as built in `setup_entities`.
+fn draw_instances(
+    pass: &mut RenderPass,
+    meshes: &[Mesh],
+    vertex_buf: &Buffer,
+    index_buf: &Buffer,
+    inst_buf: &Buffer,
+    mappings: &[(i32, u32, u32)],
+) {
+    pass.set_vertex_buffer(0, vertex_buf.slice(..));
+    pass.set_vertex_buffer(1, inst_buf.slice(..));
+    pass.set_index_buffer(index_buf.slice(..), wgpu::IndexFormat::Uint32);
+
+    let mut start_ind = 0;
+    for (mesh, &(vertex_start, instance_start, instance_count)) in meshes.iter().zip(mappings) {
+        let end_ind = start_ind + mesh.indices.len() as u32;
+
+        if instance_count > 0 {
+            pass.draw_indexed(
+                start_ind..end_ind,
+                vertex_start,
+                instance_start..instance_start + instance_count,
+            );
+        }
+
+        start_ind = end_ind;
     }
 }
 

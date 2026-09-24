@@ -64,6 +64,17 @@ impl Texture {
         config: &wgpu::SurfaceConfiguration,
         label: &str,
     ) -> Self {
+        Self::create_screen_texture(device, config, label, SSAO_FORMAT)
+    }
+
+    /// Create a window-sized, 1-sample offscreen buffer that one pass renders to, and a later
+    /// pass reads with textureLoad, indexed by window pixel coordinates.
+    pub fn create_screen_texture(
+        device: &Device,
+        config: &wgpu::SurfaceConfiguration,
+        label: &str,
+        format: TextureFormat,
+    ) -> Self {
         let desc = TextureDescriptor {
             label: Some(label),
             size: wgpu::Extent3d {
@@ -74,14 +85,14 @@ impl Texture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: SSAO_FORMAT,
+            format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
 
         let texture = device.create_texture(&desc);
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        // The blur reads with textureLoad, so this sampler is never bound; it exists only
+        // Readers use textureLoad, so this sampler is never bound; it exists only
         // to satisfy the shared `Texture` shape.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
 

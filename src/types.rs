@@ -264,6 +264,19 @@ impl Instance {
     }
 }
 
+impl Instance {
+    /// For the outline mask pass: The entity's transform, with its outline color in place of
+    /// its own color, and the outline thickness in the opacity slot.
+    pub(crate) fn new_outline(entity: &Entity, outline: &Outline) -> Self {
+        let mut result: Self = entity.into();
+
+        result.color = Vec3::new(outline.color.0, outline.color.1, outline.color.2);
+        result.opacity = outline.thickness;
+
+        result
+    }
+}
+
 impl From<&Entity> for Instance {
     fn from(entity: &Entity) -> Self {
         let scale = match entity.scale_partial {
@@ -291,6 +304,20 @@ pub struct Mesh {
     /// buffer, we offset them by previous meshes' vertex counts.
     pub indices: Vec<usize>,
     pub material: usize,
+}
+
+/// A solid band drawn around an entity's silhouette, as seen by the camera. For example, to
+/// mark it as selected.
+///
+/// Outlines are computed in screen space from the combined silhouette of all outlined entities,
+/// so a group of touching entities (e.g. the atoms and bonds of a molecule) gets a single outline
+/// around its overall profile, instead of one per entity. Outlines are drawn on top of other
+/// geometry; they are not hidden by entities in front of the outlined ones.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Outline {
+    pub color: (f32, f32, f32),
+    /// Width of the band, in logical pixels. (i.e. it is scaled by the window's DPI factor)
+    pub thickness: f32,
 }
 
 /// Represents an entity in the world. This is not fundamental to the WGPU system.
@@ -325,8 +352,13 @@ pub struct Entity {
     /// Used for replacing entities without rebuilding the buffer.
     /// Which buffer this slot is in.
     pub buf_is_transparent: bool,
+    /// Used for replacing entities without rebuilding the buffer. The slot in the outline
+    /// instance buffer; `Some` if and only if the entity was outlined at the last rebuild.
+    pub buf_i_outline: Option<usize>,
     /// Display text over (or near) the element.
     pub overlay_text: Option<TextOverlay>,
+    /// If `Some`, draw an outline around this entity's silhouette.
+    pub outline: Option<Outline>,
 }
 
 impl Default for Entity {
@@ -346,7 +378,9 @@ impl Default for Entity {
             shinyness: 0.,
             buf_i: None,
             buf_is_transparent: false,
+            buf_i_outline: None,
             overlay_text: None,
+            outline: None,
         }
     }
 }

@@ -20,6 +20,7 @@ mod gui;
 mod input;
 pub mod lighting;
 mod meshes;
+mod outline;
 mod system;
 mod text_overlay;
 mod texture;
@@ -36,8 +37,8 @@ pub use system::run;
 pub use text_overlay::TextOverlay;
 pub use types::{
     AmbientOcclusion, ControlScheme, EngineUpdates, Entity, FramerateDisplay, GraphicsSettings,
-    InputSettings, Mesh, Scene, ScrollBehavior, UiLayoutSides, UiLayoutTopBottom, UiSettings,
-    Vertex,
+    InputSettings, Mesh, Outline, Scene, ScrollBehavior, UiLayoutSides, UiLayoutTopBottom,
+    UiSettings, Vertex,
 };
 pub use vector_overlay::{
     OverlayAnchor, OverlayColor, OverlayPoint, OverlayPrimitive, OverlayStroke, VectorOverlay,

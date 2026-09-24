@@ -309,6 +309,10 @@ where
                 &graphics.ssao_texture.view,
             );
 
+            if let Some(outline) = &mut graphics.outline {
+                outline.resize(&sys.device, &sys.surface_cfg);
+            }
+
             if let Some(t) = &mut graphics.msaa_texture {
                 *t = GraphicsState::create_msaa_texture(
                     &sys.device,
