@@ -19,7 +19,7 @@ use lin_alg::f32::{Mat4, Vec3};
 use wgpu::{
     self, BindGroup, BindGroupLayout, BindingType, BlendState, Buffer, BufferBindingType,
     BufferUsages, CommandEncoder, CommandEncoderDescriptor, DepthStencilState, Device, Face,
-    FragmentState, PipelineCache, Queue, RenderPass, RenderPassDepthStencilAttachment,
+    FragmentState, FrontFace, PipelineCache, Queue, RenderPass, RenderPassDepthStencilAttachment,
     RenderPassDescriptor, RenderPipeline, ShaderStages, StoreOp, SurfaceConfiguration,
     SurfaceTexture, TextureDescriptor, TextureView, VertexBufferLayout, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
@@ -30,6 +30,7 @@ use winit::{
 };
 
 use crate::{
+    Camera, Handedness,
     camera::CAMERA_SIZE,
     gauss::{CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT, QUAD_VERTICES},
     gui::GuiState,
@@ -45,6 +46,8 @@ use crate::{
     viewport_rect,
 };
 
+// Camera-local axes. With `Handedness::Right`, `RIGHT_VEC` points to the left of the screen;
+// see `Camera::screen_x_sign`.
 pub const UP_VEC: Vec3 = Vec3 {
     x: 0.,
     y: 1.,
@@ -311,6 +314,8 @@ impl GraphicsState {
             bias: wgpu::DepthBiasState::default(),
         };
 
+        let front_face = front_face_for(&scene.camera);
+
         // todo: You should probably, eventually, make two passes for meshes. One for
         // opaque objects, with no blending (blend_state = None), then a second pass
         // for transparent objects. You would set depth to write only, for opaque objects,
@@ -327,6 +332,7 @@ impl GraphicsState {
             // Some(depth_stencil_mesh),
             None,
             Some(Face::Back),
+            front_face,
             "Render pipeline mesh opaque",
             pipeline_cache.as_ref(),
         );
@@ -343,6 +349,7 @@ impl GraphicsState {
             Some(depth_stencil_mesh.clone()),
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Back),
+            front_face,
             "Render pipeline mesh transparent",
             pipeline_cache.as_ref(),
         );
@@ -358,6 +365,7 @@ impl GraphicsState {
             Some(depth_stencil_mesh.clone()),
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Front),
+            front_face,
             "Render pipeline mesh transparent – backfaces",
             pipeline_cache.as_ref(),
         );
@@ -379,6 +387,7 @@ impl GraphicsState {
             msaa_samples,
             &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
             depth_stencil_mesh.clone(),
+            front_face,
             pipeline_cache.as_ref(),
         );
 
@@ -400,6 +409,7 @@ impl GraphicsState {
                 &layout,
                 shader_mesh.clone(),
                 &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
+                front_face,
                 pipeline_cache.as_ref(),
             )
         };
@@ -626,6 +636,7 @@ impl GraphicsState {
                 depth_stencil_gauss,
                 Some(BlendState::ALPHA_BLENDING),
                 None,
+                front_face,
                 "Render pipeline gaussian",
                 pipeline_cache.as_ref(),
             ))
@@ -1162,6 +1173,8 @@ impl GraphicsState {
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         });
+        let front_face = front_face_for(&self.scene.camera);
+
         self.pipeline_gauss = Some(create_render_pipeline(
             device,
             &layout,
@@ -1172,6 +1185,7 @@ impl GraphicsState {
             depth,
             Some(BlendState::ALPHA_BLENDING),
             None,
+            front_face,
             "Render pipeline gaussian",
             self.pipeline_cache.as_ref(),
         ));
@@ -1268,6 +1282,8 @@ impl GraphicsState {
             bias: wgpu::DepthBiasState::default(),
         };
 
+        let front_face = front_face_for(&self.scene.camera);
+
         let pipeline_layout_mesh = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render pipeline layout"),
             bind_group_layouts: &[
@@ -1287,6 +1303,7 @@ impl GraphicsState {
             Some(depth_stencil_mesh.clone()),
             None,
             Some(Face::Back),
+            front_face,
             "Render pipeline mesh opaque",
             self.pipeline_cache.as_ref(),
         );
@@ -1300,6 +1317,7 @@ impl GraphicsState {
             Some(depth_stencil_mesh.clone()),
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Back),
+            front_face,
             "Render pipeline mesh transparent",
             self.pipeline_cache.as_ref(),
         );
@@ -1313,6 +1331,7 @@ impl GraphicsState {
             Some(depth_stencil_mesh.clone()),
             Some(BlendState::ALPHA_BLENDING),
             Some(Face::Front),
+            front_face,
             "Render pipeline mesh transparent – backfaces",
             self.pipeline_cache.as_ref(),
         );
@@ -1332,6 +1351,7 @@ impl GraphicsState {
             new_msaa,
             &[Some(VERTEX_LAYOUT), Some(INSTANCE_LAYOUT)],
             depth_stencil_mesh,
+            front_face,
             self.pipeline_cache.as_ref(),
         );
 
@@ -1839,6 +1859,15 @@ fn draw_instances(
     }
 }
 
+/// Mirroring the view (right-handed coordinates) reverses the on-screen winding of every
+/// triangle, so the winding we treat as front-facing flips with it.
+fn front_face_for(cam: &Camera) -> FrontFace {
+    match cam.handedness {
+        Handedness::Left => FrontFace::Ccw,
+        Handedness::Right => FrontFace::Cw,
+    }
+}
+
 /// Create a render pipeline. Configurable by parameters to support multiple use cases. E.g., both
 /// meshes and gaussians.
 fn create_render_pipeline(
@@ -1851,6 +1880,7 @@ fn create_render_pipeline(
     depth_stencil: Option<DepthStencilState>,
     blend: Option<BlendState>,
     cull_mode: Option<Face>,
+    front_face: FrontFace,
     label: &str,
     cache: Option<&PipelineCache>,
 ) -> RenderPipeline {
@@ -1878,7 +1908,7 @@ fn create_render_pipeline(
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
+            front_face,
             cull_mode,
             unclipped_depth: false,
             polygon_mode: wgpu::PolygonMode::Fill,
@@ -1906,6 +1936,7 @@ fn create_render_pipeline_depth_only(
     sample_count: u32,
     vertex_buffers: &'static [Option<VertexBufferLayout<'static>>],
     depth_stencil: DepthStencilState,
+    front_face: FrontFace,
     cache: Option<&PipelineCache>,
 ) -> RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1932,7 +1963,7 @@ fn create_render_pipeline_depth_only(
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
+            front_face,
             // Cull front faces so only back faces of the inflated mesh write depth,
             // which places those values *behind* the real surface at the same pixel.
             cull_mode: Some(Face::Front),
@@ -1974,6 +2005,7 @@ fn create_contour_depth_pipeline(
     layout: &wgpu::PipelineLayout,
     shader: wgpu::ShaderModule,
     vertex_buffers: &'static [Option<VertexBufferLayout<'static>>],
+    front_face: FrontFace,
     cache: Option<&PipelineCache>,
 ) -> RenderPipeline {
     let depth_stencil = DepthStencilState {
@@ -1996,7 +2028,7 @@ fn create_contour_depth_pipeline(
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
+            front_face,
             cull_mode: Some(Face::Back),
             unclipped_depth: false,
             polygon_mode: wgpu::PolygonMode::Fill,

@@ -281,7 +281,7 @@ fn handle_scroll(
                 // Roll if left button down while scrolling
                 let fwd = cam.orientation.rotate_vec(FWD_VEC);
 
-                let mut rot_amt = -rotate_amt * dt;
+                let mut rot_amt = -rotate_amt * dt * cam.screen_x_sign();
                 if inputs.scroll_down {
                     rot_amt *= -1.; // todo: Allow reversed behavior for arc cam?
                 }
@@ -328,6 +328,9 @@ pub fn adjust_camera_free(
     let mut move_amt = input_settings.move_sens * dt;
     let mut rotate_key_amt = input_settings.rotate_key_sens * dt;
 
+    // Keeps screen-relative controls intuitive with a mirrored (right-handed) view.
+    let x_sign = cam.screen_x_sign();
+
     let mut cam_moved = false;
     let mut cam_rotated = false;
 
@@ -348,10 +351,10 @@ pub fn adjust_camera_free(
     }
 
     if inputs.right {
-        movement_vec.x += move_amt;
+        movement_vec.x += move_amt * x_sign;
         cam_moved = true;
     } else if inputs.left {
-        movement_vec.x -= move_amt;
+        movement_vec.x -= move_amt * x_sign;
         cam_moved = true;
     }
 
@@ -365,11 +368,11 @@ pub fn adjust_camera_free(
 
     if inputs.roll_cw {
         let fwd = cam.orientation.rotate_vec(FWD_VEC);
-        rotation = Quaternion::from_axis_angle(fwd, -rotate_key_amt);
+        rotation = Quaternion::from_axis_angle(fwd, -rotate_key_amt * x_sign);
         cam_rotated = true;
     } else if inputs.roll_ccw {
         let fwd = cam.orientation.rotate_vec(FWD_VEC);
-        rotation = Quaternion::from_axis_angle(fwd, rotate_key_amt);
+        rotation = Quaternion::from_axis_angle(fwd, rotate_key_amt * x_sign);
         cam_rotated = true;
     }
 
@@ -380,7 +383,7 @@ pub fn adjust_camera_free(
         let up = cam.orientation.rotate_vec(-UP_VEC);
         let right = cam.orientation.rotate_vec(-RIGHT_VEC);
 
-        rotation = Quaternion::from_axis_angle(up, -inputs.mouse_delta_x * rotate_amt)
+        rotation = Quaternion::from_axis_angle(up, -inputs.mouse_delta_x * rotate_amt * x_sign)
             * Quaternion::from_axis_angle(right, -inputs.mouse_delta_y * rotate_amt)
             * rotation;
 
@@ -433,13 +436,16 @@ pub fn adjust_camera_arc(
     // Inverse of free
     let rotate_key_amt = -input_settings.rotate_key_sens * dt;
 
+    // Keeps screen-relative controls intuitive with a mirrored (right-handed) view.
+    let x_sign = cam.screen_x_sign();
+
     if inputs.roll_cw {
         let fwd = cam.orientation.rotate_vec(FWD_VEC);
-        rotation = Quaternion::from_axis_angle(fwd, -rotate_key_amt);
+        rotation = Quaternion::from_axis_angle(fwd, -rotate_key_amt * x_sign);
         cam_rotated = true;
     } else if inputs.roll_ccw {
         let fwd = cam.orientation.rotate_vec(FWD_VEC);
-        rotation = Quaternion::from_axis_angle(fwd, rotate_key_amt);
+        rotation = Quaternion::from_axis_angle(fwd, rotate_key_amt * x_sign);
         cam_rotated = true;
     }
 
@@ -453,7 +459,7 @@ pub fn adjust_camera_arc(
         let right = cam.orientation.rotate_vec(-RIGHT_VEC);
 
         // Rotation logic: Equivalent to the free camera.
-        rotation = Quaternion::from_axis_angle(up, -inputs.mouse_delta_x * rotate_amt)
+        rotation = Quaternion::from_axis_angle(up, -inputs.mouse_delta_x * rotate_amt * x_sign)
             * Quaternion::from_axis_angle(right, -inputs.mouse_delta_y * rotate_amt);
 
         // Distance between cam and center is invariant under this change.

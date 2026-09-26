@@ -13,6 +13,34 @@ use crate::{
 // For each of the 4 matrices in the camera, plus a padded vec3 for position.
 pub const CAMERA_SIZE: usize = MAT4_SIZE + 3 * VEC3_UNIFORM_SIZE + 16; // Final 16 is an alignment pad.
 
+/// The handedness of the world coordinate system. When viewed with +X pointing right, and +Y
+/// pointing up, this determines if +Z points into the screen, or out of it.
+///
+/// Rendering data authored in one handedness with the other displays its mirror image; no
+/// camera rotation can undo this. For example, molecular coordinates (PDB, mmCIF, SDF etc.)
+/// are right-handed; displaying them as left-handed turns alpha helices left-handed, and inverts
+/// chirality.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Handedness {
+    /// +X right and +Y up means +Z points into the screen, away from the viewer. This is the
+    /// convention of DirectX and Unity.
+    ///
+    /// An identity camera orientation looks along +Z, so it shows +X right, and +Y up.
+    Left,
+    /// +X right and +Y up means +Z points out of the screen, toward the viewer. This is the
+    /// convention of OpenGL, most scientific software, and molecular viewers such as PyMOL,
+    /// Chimera, and Mol*.
+    ///
+    /// An identity camera orientation looks along +Z, so it shows +X *left*, and +Y up. To view
+    /// with +X right, and +Y up, look along -Z: e.g. rotate the camera a half turn around +Y.
+    ///
+    /// We implement this by mirroring the screen's X axis. `FWD_VEC` and `UP_VEC` remain camera
+    /// forward and up, but `RIGHT_VEC` (camera-local +X) points to the *left* of the screen.
+    /// See `Camera::screen_x_sign`.
+    #[default]
+    Right,
+}
+
 #[derive(Clone, Debug)]
 pub struct Camera {
     pub fov_y: f32,  // Vertical field of view in radians.
@@ -41,6 +69,9 @@ pub struct Camera {
     /// World-space expansion along normals used in the depth-aware halo prepass.
     /// 0.0 = disabled. Set from GraphicsSettings::depth_aware_halos.
     pub halo_expansion: f32,
+    /// Set this prior to starting the engine; it affects face culling, which we configure
+    /// at init. Run `update_proj_mat` after changing it.
+    pub handedness: Handedness,
 }
 
 impl Camera {
@@ -85,7 +116,27 @@ impl Camera {
     /// Updates the projection matrix based on the projection parameters.
     /// Run this after updating the parameters.
     pub fn update_proj_mat(&mut self) {
-        self.proj_mat = Mat4::new_perspective_lh(self.fov_y, self.aspect, self.near, self.far);
+        let proj = Mat4::new_perspective_lh(self.fov_y, self.aspect, self.near, self.far);
+
+        self.proj_mat = match self.handedness {
+            Handedness::Left => proj,
+            // Mirroring clip-space X converts the left-handed projection into a right-handed
+            // one, while keeping +Z forward, and +Y up in camera space.
+            Handedness::Right => Mat4::new_scaler_partial(Vec3::new(-1., 1., 1.)) * proj,
+        };
+    }
+
+    /// 1 if camera-local +X (`RIGHT_VEC`) points to the right of the screen, and -1 if
+    /// it points left, as it does with right-handed coordinates.
+    ///
+    /// Use this when converting screen-space input (e.g. mouse motion) to camera motion:
+    /// Multiply movement along camera-local X, and rotations about camera-local Y (yaw) and
+    /// Z (roll) by it. Rotations about camera-local X (pitch) are unaffected.
+    pub fn screen_x_sign(&self) -> f32 {
+        match self.handedness {
+            Handedness::Left => 1.,
+            Handedness::Right => -1.,
+        }
     }
 
     /// Calculate the view matrix: This is a translation of the negative coordinates of the camera's
@@ -142,6 +193,7 @@ impl Default for Camera {
             fog_color: [0., 0., 0.],
             edge_cueing: 0.,
             halo_expansion: 0.,
+            handedness: Default::default(),
         };
 
         result.update_proj_mat();

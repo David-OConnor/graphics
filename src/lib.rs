@@ -28,7 +28,7 @@ mod types;
 mod vector_overlay;
 mod window;
 
-pub use camera::Camera;
+pub use camera::{Camera, Handedness};
 pub use gauss::Gaussian;
 pub use graphics::{EntityUpdate, FWD_VEC, RIGHT_VEC, UP_VEC};
 pub use input::{InputsCommanded, adjust_camera_free, arc_rotation};
