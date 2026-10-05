@@ -1575,6 +1575,13 @@ impl GraphicsState {
             // Reset the mouse inputs; keyboard inputs are reset by their release event.
             self.inputs_commanded.mouse_delta_x = 0.;
             self.inputs_commanded.mouse_delta_y = 0.;
+
+            // Scroll is one-shot. The camera adjusters clear it, but they don't run under
+            // `ControlScheme::None` (e.g. while the application is manipulating an object).
+            // Without this, a scroll during that time stays latched, and moves the camera as soon
+            // as a camera control scheme is restored.
+            self.inputs_commanded.scroll_up = false;
+            self.inputs_commanded.scroll_down = false;
         }
 
         // We create a CommandEncoder to create the actual commands to send to the

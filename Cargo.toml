@@ -22,11 +22,11 @@ lin_alg = { version = "1.4.3", features = ["computer_graphics"] }
 # 3D and graphics libraries. There is a degree of interdependence between them.
 wgpu = "30.0.1"
 winit = "0.30.13"
-egui = "0.36.1"
-egui-wgpu = "0.36.1"
-egui-winit = "0.36.1"
+egui = "0.36.2"
+egui-wgpu = "0.36.2"
+egui-winit = "0.36.2"
 
-pollster = "0.4.0"  # For 2 WGPU init fns that use async.
+pollster = "1.0.1"  # For 2 WGPU init fns that use async.
 image = "0.25.10" # For loading textures
 obj = "0.10.2"  # For loading OBJ meshes.
 bincode = { version = "2.0.1", optional = true } # For our save/load util.

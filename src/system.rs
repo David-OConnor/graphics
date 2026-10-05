@@ -212,6 +212,7 @@ where
             window_title: self.scene.window_title.clone(),
             window_size: self.scene.window_size,
             gui_size: self.scene.gui_size,
+            adapter_info: Some(adapter.get_info()),
         };
 
         let mut graphics = GraphicsState::new(

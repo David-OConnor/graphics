@@ -22,6 +22,7 @@ use crate::{
 
 const IDLE_WAKE_DT_MAX: Duration = Duration::from_nanos(16_666_667);
 const CONTINUOUS_DT_MAX: Duration = Duration::from_millis(100);
+const SURFACE_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 fn frame_delta(elapsed: Duration, continuous_redraw: bool) -> Duration {
     elapsed.min(if continuous_redraw {
@@ -141,8 +142,14 @@ where
                     self.graphics_settings.msaa_samples = new_msaa;
                 }
             }
-            // Timeout, Occluded, Outdated, Lost, or Validation — skip frame.
-            _ => (),
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                let size = sys.size;
+                self.resize(size);
+                self.schedule_repaint(Instant::now() + SURFACE_RETRY_DELAY);
+            }
+            // A skipped frame never runs EGUI's repaint callback. Schedule another attempt
+            // so a transient surface failure cannot leave the entire UI without a wakeup.
+            _ => self.schedule_repaint(Instant::now() + SURFACE_RETRY_DELAY),
         }
 
         request_redraw
@@ -487,16 +494,21 @@ pub fn viewport_rect(
     let mut eff_width = win_width as f32;
     let mut eff_height = win_height as f32;
 
+    // Keep the minimum one-pixel viewport inside the surface when panels fill it.
+    // Clamping only its size leaves its origin one pixel beyond the valid bounds.
+    let ui_width = ui_size.0.clamp(0., (eff_width - 1.).max(0.));
+    let ui_height = ui_size.1.clamp(0., (eff_height - 1.).max(0.));
+
     // Note: This only supports top and left UI; right and bottom is broken.
     if ui_settings.layout_sides == UiLayoutSides::Left {
-        x = ui_size.0;
+        x = ui_width;
     }
     if ui_settings.layout_top_bottom == UiLayoutTopBottom::Top {
-        y = ui_size.1;
+        y = ui_height;
     }
 
-    eff_width -= ui_size.0;
-    eff_height -= ui_size.1;
+    eff_width -= ui_width;
+    eff_height -= ui_height;
 
     // Safety check to prevent crash if UI takes entire screen
     if eff_width < 1.0 {

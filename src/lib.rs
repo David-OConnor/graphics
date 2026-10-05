@@ -44,6 +44,8 @@ pub use vector_overlay::{
     OverlayAnchor, OverlayColor, OverlayPoint, OverlayPrimitive, OverlayStroke, VectorOverlay,
 };
 pub use window::viewport_rect;
+// Re-exported so applications can inspect `Scene::adapter_info` without depending on wgpu.
+pub use wgpu::{AdapterInfo, DeviceType};
 // Re-export winit DeviceEvents for use in the API; this prevents the calling
 // lib from needing to use winit as a dependency directly.
 // todo: the equiv for mouse events too. And in the future, Gamepad events.

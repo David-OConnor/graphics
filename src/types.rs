@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[cfg(feature = "app_utils")]
 use bincode::{Decode, Encode};
 use lin_alg::f32::{Mat4, Quaternion, Vec3, Vec4};
-use wgpu::{VertexAttribute, VertexBufferLayout, VertexFormat};
+use wgpu::{AdapterInfo, VertexAttribute, VertexBufferLayout, VertexFormat};
 
 use crate::{
     EntityUpdate, camera::Camera, gauss::Gaussian, lighting::Lighting, text_overlay::TextOverlay,
@@ -439,6 +439,10 @@ pub struct Scene {
     pub window_size: (f32, f32),
     /// A duplicate of GUI.size, to be available to the application.
     pub gui_size: (f32, f32),
+    /// The GPU the renderer selected; e.g. to tune settings to integrated vs discrete graphics.
+    /// Set by the engine once it has created the adapter; `None` before then. Read-only for
+    /// the application.
+    pub adapter_info: Option<AdapterInfo>,
 }
 
 impl Default for Scene {
@@ -456,6 +460,7 @@ impl Default for Scene {
             window_title: "(Window title here)".to_owned(),
             window_size: (900., 600.),
             gui_size: (0., 0.),
+            adapter_info: None,
         }
     }
 }
