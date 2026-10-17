@@ -33,7 +33,7 @@ pub use gauss::Gaussian;
 pub use graphics::{EntityUpdate, FWD_VEC, RIGHT_VEC, UP_VEC};
 pub use input::{InputsCommanded, adjust_camera_free, arc_rotation};
 pub use lighting::{LightType, Lighting, PointLight};
-pub use system::run;
+pub use system::{run, run_with_exit_handler};
 pub use text_overlay::TextOverlay;
 pub use types::{
     AmbientOcclusion, ControlScheme, EngineUpdates, Entity, FramerateDisplay, GraphicsSettings,

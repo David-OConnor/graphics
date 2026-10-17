@@ -443,6 +443,10 @@ where
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(exit_handler) = self.exit_handler.take() {
+            exit_handler(&mut self.user_state);
+        }
+
         let cache_data = self
             .graphics
             .as_ref()

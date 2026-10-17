@@ -87,6 +87,9 @@ where
     pub paused: bool,
     pub(crate) event_proxy: EventLoopProxy<UserEvent>,
     pub(crate) next_repaint: Option<Instant>,
+    /// Run once, from the event loop's `exiting` callback. Boxed so it doesn't add a generic
+    /// parameter to every `State` impl.
+    pub(crate) exit_handler: Option<Box<dyn FnOnce(&mut T)>>,
 }
 
 impl<T: 'static, FRender, FEventDev, FEventWin, FGui> State<T, FRender, FEventDev, FEventWin, FGui>
@@ -108,6 +111,7 @@ where
         event_win_handler: FEventWin,
         gui_handler: FGui,
         event_proxy: EventLoopProxy<UserEvent>,
+        exit_handler: Option<Box<dyn FnOnce(&mut T)>>,
     ) -> Self {
         let last_render_time = Instant::now();
         let dt = Duration::new(0, 0);
@@ -137,6 +141,7 @@ where
             paused: false,
             event_proxy,
             next_repaint: None,
+            exit_handler,
         }
     }
 
@@ -388,6 +393,42 @@ pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
     FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
     FGui: FnMut(&mut T, &mut egui::Ui, &mut Scene) -> EngineUpdates + 'static,
 {
+    run_with_exit_handler(
+        user_state,
+        scene,
+        ui_settings,
+        graphics_settings,
+        render_handler,
+        event_dev_handler,
+        event_win_handler,
+        gui_handler,
+        |_| {},
+    );
+}
+
+/// Like `run`, with an additional `exit_handler`, which runs once, when the event loop exits. Use
+/// it e.g. to save application state on close.
+///
+/// Prefer this to handling `WindowEvent::CloseRequested` in `event_win_handler`: That event isn't
+/// forwarded to the application while the cursor is over the GUI, and isn't emitted on all exit
+/// paths. (e.g. Cmd+Q on macOS, where `run` never returns either.)
+pub fn run_with_exit_handler<T: 'static, FRender, FEventDev, FEventWin, FGui, FExit>(
+    user_state: T,
+    scene: Scene,
+    ui_settings: UiSettings,
+    graphics_settings: GraphicsSettings,
+    render_handler: FRender,
+    event_dev_handler: FEventDev,
+    event_win_handler: FEventWin,
+    gui_handler: FGui,
+    exit_handler: FExit,
+) where
+    FRender: FnMut(&mut T, &mut Scene, f32) -> EngineUpdates + 'static,
+    FEventDev: FnMut(&mut T, DeviceEvent, &mut Scene, bool, f32) -> EngineUpdates + 'static,
+    FEventWin: FnMut(&mut T, WindowEvent, &mut Scene, f32) -> EngineUpdates + 'static,
+    FGui: FnMut(&mut T, &mut egui::Ui, &mut Scene) -> EngineUpdates + 'static,
+    FExit: FnOnce(&mut T) + 'static,
+{
     let (_frame_count, _accum_time) = (0, 0.0);
 
     let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
@@ -403,6 +444,7 @@ pub fn run<T: 'static, FRender, FEventDev, FEventWin, FGui>(
         event_win_handler,
         gui_handler,
         event_proxy,
+        Some(Box::new(exit_handler)),
     );
 
     event_loop.set_control_flow(ControlFlow::Wait);
