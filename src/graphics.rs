@@ -169,6 +169,7 @@ pub(crate) struct GraphicsState {
     pub pending_msaa: Option<u32>,
     /// Cached surface configuration — updated on resize, used for resource recreation.
     pub surface_cfg: SurfaceConfiguration,
+    render_target_state: Option<(u32, u32, u32, bool, bool, bool)>,
     /// Stored mesh shader (needed to recreate MSAA-dependent pipelines without re-parsing).
     shader_mesh: wgpu::ShaderModule,
     /// Stored contour shader so its optional overlay pipeline can be compiled on first use.
@@ -289,8 +290,11 @@ impl GraphicsState {
             label: Some("Camera halo bind group"),
         });
 
+        let mut empty_cfg = surface_cfg.clone();
+        empty_cfg.width = 1;
+        empty_cfg.height = 1;
         let depth_texture =
-            Texture::create_depth_texture(device, surface_cfg, "Depth texture", msaa_samples);
+            Texture::create_depth_texture(device, &empty_cfg, "Depth texture", msaa_samples);
 
         let shader_mesh = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Graphics shader"),
@@ -395,7 +399,7 @@ impl GraphicsState {
         // A 1-sample depth texture populated by a prepass; always 1-sample so it can
         // be bound as texture_depth_2d in the overlay shader regardless of MSAA setting.
         let depth_texture_contour =
-            Texture::create_depth_texture(device, surface_cfg, "Depth texture contour", 1);
+            Texture::create_depth_texture(device, &empty_cfg, "Depth texture contour", 1);
 
         // Prepass pipeline: same shader, depth-only (fragment: None), 1-sample, back-face cull.
         let pipeline_contour_depth = {
@@ -516,7 +520,7 @@ impl GraphicsState {
         // Blur + composite. The SSAO pass jitters its kernel per-pixel, so its output is
         // noise-carrying by design; this pass integrates the noise back out and is what
         // actually touches the scene.
-        let ssao_texture = Texture::create_ssao_texture(device, surface_cfg, "SSAO texture");
+        let ssao_texture = Texture::create_ssao_texture(device, &empty_cfg, "SSAO texture");
         let shader_ssao_blur = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("SSAO blur shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader_ssao_blur.wgsl").into()),
@@ -658,7 +662,7 @@ impl GraphicsState {
         window.set_title(&scene.window_title);
 
         let msaa_texture = if msaa_samples > 1 {
-            Some(Self::create_msaa_texture(device, surface_cfg, msaa_samples))
+            Some(Self::create_msaa_texture(device, &empty_cfg, msaa_samples))
         } else {
             None
         };
@@ -697,6 +701,7 @@ impl GraphicsState {
             msaa_samples,
             pending_msaa: None,
             surface_cfg: surface_cfg.clone(),
+            render_target_state: None,
             shader_mesh,
             shader_contour,
             shader_gauss,
@@ -731,6 +736,79 @@ impl GraphicsState {
         result.setup_entities(device, queue);
 
         result
+    }
+
+    pub(crate) fn refresh_render_targets(&mut self, device: &Device) {
+        let has_geometry = self.instance_buf.size() > 0
+            || self.instance_buf_transparent.size() > 0
+            || self.instance_buf_gauss.size() > 0;
+        let has_opaque = self.instance_buf.size() > 0;
+        let ssao = has_opaque && self.ssao_strength > 0.;
+        let prepass =
+            has_opaque && (ssao || self.depth_revealing > 0. || self.intersection_revealing > 0.);
+        if self.instance_buf_outline.size() == 0 {
+            self.outline = None;
+        }
+
+        let key = (
+            self.surface_cfg.width,
+            self.surface_cfg.height,
+            self.msaa_samples,
+            has_geometry,
+            prepass,
+            ssao,
+        );
+        if self.render_target_state == Some(key) {
+            return;
+        }
+
+        let mut main_cfg = self.surface_cfg.clone();
+        if !has_geometry {
+            main_cfg.width = 1;
+            main_cfg.height = 1;
+        }
+        self.depth_texture =
+            Texture::create_depth_texture(device, &main_cfg, "Depth texture", self.msaa_samples);
+        self.msaa_texture = (has_geometry && self.msaa_samples > 1)
+            .then(|| Self::create_msaa_texture(device, &main_cfg, self.msaa_samples));
+
+        let mut prepass_cfg = self.surface_cfg.clone();
+        if !prepass {
+            prepass_cfg.width = 1;
+            prepass_cfg.height = 1;
+        }
+        self.depth_texture_contour =
+            Texture::create_depth_texture(device, &prepass_cfg, "Depth texture contour", 1);
+        self.bind_group_contour = create_contour_bind_group(
+            device,
+            &self.layout_contour,
+            &self.depth_texture_contour.view,
+            &self.contour_uniform_buf,
+        );
+        self.bind_group_ssao = create_ssao_bind_group(
+            device,
+            &self.layout_ssao,
+            &self.depth_texture_contour.view,
+            &self.ssao_uniform_buf,
+        );
+
+        let mut ao_cfg = self.surface_cfg.clone();
+        if !ssao {
+            ao_cfg.width = 1;
+            ao_cfg.height = 1;
+        }
+        self.ssao_texture = Texture::create_ssao_texture(device, &ao_cfg, "SSAO texture");
+        self.bind_group_ssao_blur = create_ssao_blur_bind_group(
+            device,
+            &self.layout_ssao_blur,
+            &self.depth_texture_contour.view,
+            &self.ssao_uniform_buf,
+            &self.ssao_texture.view,
+        );
+        if let Some(outline) = &mut self.outline {
+            outline.resize(device, &self.surface_cfg);
+        }
+        self.render_target_state = Some(key);
     }
 
     pub(crate) fn create_msaa_texture(
@@ -1262,17 +1340,8 @@ impl GraphicsState {
     pub(crate) fn apply_msaa_change(&mut self, device: &Device) {
         let new_msaa = self.msaa_samples;
 
-        self.depth_texture =
-            Texture::create_depth_texture(device, &self.surface_cfg, "Depth texture", new_msaa);
-        self.msaa_texture = if new_msaa > 1 {
-            Some(Self::create_msaa_texture(
-                device,
-                &self.surface_cfg,
-                new_msaa,
-            ))
-        } else {
-            None
-        };
+        self.render_target_state = None;
+        self.refresh_render_targets(device);
 
         let depth_stencil_mesh = DepthStencilState {
             format: DEPTH_FORMAT,
@@ -1614,6 +1683,8 @@ impl GraphicsState {
         // an error about an index being out of bounds.
         process_engine_updates(&updates_gui, self, device, queue);
         self.ensure_gaussian_pipeline(device);
+        self.refresh_render_targets(device);
+        let has_geometry = self.render_target_state.is_some_and(|key| key.3);
         let request_redraw = updates_gui.request_redraw;
 
         // Calculate the actual 3D viewport restricted by the GUI
@@ -1622,8 +1693,9 @@ impl GraphicsState {
 
         // Geometry prepass: render opaque geometry into the 1-sample depth texture used
         // by both contour lines and SSAO.
-        let contours_active = self.depth_revealing > 0. || self.intersection_revealing > 0.;
-        let ssao_active = self.ssao_strength > 0.;
+        let contours_active = self.instance_buf.size() > 0
+            && (self.depth_revealing > 0. || self.intersection_revealing > 0.);
+        let ssao_active = self.instance_buf.size() > 0 && self.ssao_strength > 0.;
         let prepass_active = contours_active || ssao_active;
         if prepass_active && self.instance_buf.size() > 0 {
             let mut pre = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1665,19 +1737,41 @@ impl GraphicsState {
             drop(pre);
         }
 
-        let rpass = self.setup_render_pass(
-            &mut encoder,
-            output_texture,
-            (vp_x, vp_y, vp_width, vp_height),
-        );
+        if has_geometry {
+            drop(self.setup_render_pass(
+                &mut encoder,
+                output_texture,
+                (vp_x, vp_y, vp_width, vp_height),
+            ));
+        } else {
+            drop(encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("Empty scene"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: output_texture,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: self.scene.background_color.0 as f64,
+                            g: self.scene.background_color.1 as f64,
+                            b: self.scene.background_color.2 as f64,
+                            a: 1.,
+                        }),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            }));
+        }
 
         // Aspect ratio comes from the ACTUAL 3D viewport, not the window: the same rect
         // the passes above are scissored to, so the projection and the pixels agree.
         self.scene.camera.aspect = vp_width / vp_height;
         self.scene.camera.update_proj_mat();
         self.update_camera(queue);
-
-        drop(rpass); // End the 3D render pass (MSAA resolve happens here).
 
         // Contour overlay: alpha-blend dark lines on top of the resolved scene.
         if contours_active && let Some(pipeline) = &self.pipeline_contour_overlay {

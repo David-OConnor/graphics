@@ -4,11 +4,9 @@ A 3D rendering engine for rust programs, with GUI integration.
 [![Crate](https://img.shields.io/crates/v/graphics.svg)](https://crates.io/crates/graphics)
 [![Docs](https://docs.rs/graphics/badge.svg)](https://docs.rs/graphics)
 
-This library is a framework for building PC applications that have 3D graphics, and a GUI. It uses the [WGPU toolkit](https://wgpu.rs/) with Vulkan backend, and [EGUI](https://docs.rs/egui/latest/egui/). 
-It works on Windows, Linux, and Mac.
+This library is a framework for building PC applications that have 3D graphics, and a GUI. It uses the [WGPU toolkit](https://wgpu.rs/) with Vulkan backend, and [EGUI](https://docs.rs/egui/latest/egui/). It works on Windows, Linux, and Mac.
 
-This is intended as a general-purpose 3D visualization tool. Example use cases including wave-function analysis, n-body simulations, 
-and protein structure viewing. It's also been used to visualize UAS attitude in preflight software. Its goals are to be intuitive and flexible.
+This is intended as a general-purpose 3D visualization tool. Example use cases including wave-function analysis, n-body simulations, and protein structure viewing. It's also been used to visualize UAS attitude in preflight software. Its goals are to be intuitive and flexible.
 
 Supports transparent meshes, and gaussians. Includes built-in mesh primitives for spheres, cylinders, and rectangular prisms.
 Allows importing and creating arbitrary meshes.
@@ -16,9 +14,7 @@ Allows importing and creating arbitrary meshes.
 ![Electron density demo](screenshots/daedalus_iso_a.png)
 
 
-It includes built in FPS-style (Amplified for 6 DOF) camera controls. (WSAD + Space for up, C for down, Q and E for roll.
-Mouse for pitch and yaw). This can be overridden by the application with arbitrary controls. (See the `event_dev_handler` and `event_win_handler` parameters to
-`graphics::run()`)
+It includes built in FPS-style (Amplified for 6 DOF) camera controls. (WSAD + Space for up, C for down, Q and E for roll. Mouse for pitch and yaw). This can be overridden by the application with arbitrary controls. (See the `event_dev_handler` and `event_win_handler` parameters to `graphics::run()`)
 
 ![Surface demo](screenshots/surface_mesh_transparent.png)
 
@@ -29,12 +25,9 @@ You can enable the `app_utils` feature for utility functionality that is useful 
 <!-- ![WF lab screenshot](screenshots/psi_lab_2024.png) -->
 ![Ribbon Mesh example](screenshots/ribbon_sifts_res_color.png)
 
-Example boilerplate below. Calling `render(state)` starts an event loop. The application can interact with the engine 
-through the `_handler` callbacks; each frame, each hardware event, or through the GUI. Each of these return an 
-`EngineUpdates` struct, which determines if entities, meshes, lighting, or the camera needs to be refreshed.
+Example boilerplate below. Calling `render(state)` starts an event loop. The application can interact with the engine through the `_handler` callbacks; each frame, each hardware event, or through the GUI. Each of these return an `EngineUpdates` struct, which determines if entities, meshes, lighting, or the camera needs to be refreshed.
 
-Note that basic keyboard and mouse camera controls are included by default, without explicitly
-setting them in the Device and Window event handlers.
+Note that basic keyboard and mouse camera controls are included by default, without explicitly setting them in the Device and Window event handlers.
 
 ```rust
 //! This module integrations this application with the graphics engine.
@@ -393,13 +386,6 @@ Settings available. See the [GraphicsSettings docs page](https://docs.rs/graphic
 - Intersection-revealing contour lines
 - A framerate counter.
 
-One setting worth calling out, because its useful range depends on your scene rather than
-on taste: `ssao_radius` is the world-space radius of the ambient-occlusion sample
-hemisphere — how far from each pixel the renderer looks for occluders. It's in scene units,
-not pixels, so set it to roughly the size of the crevices you want shaded. The default of
-`0.7` suits scenes built around unit-scale objects; if your geometry is much larger or
-smaller than that, scale it to match. Too small and only tight creases darken; too large and
-the effect flattens into broad shading that misses fine detail.
 
 ```rust
 let settings = GraphicsSettings {

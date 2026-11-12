@@ -25,12 +25,8 @@ use winit::{
 
 use crate::{
     EntityUpdate,
-    graphics::{
-        GraphicsState, create_contour_bind_group, create_ssao_bind_group,
-        create_ssao_blur_bind_group,
-    },
+    graphics::GraphicsState,
     gui::GuiState,
-    texture::Texture,
     types::{EngineUpdates, GraphicsSettings, Scene, UiSettings},
 };
 
@@ -279,53 +275,7 @@ where
             // Keep the cached surface config on GraphicsState in sync.
             graphics.surface_cfg = sys.surface_cfg.clone();
 
-            graphics.depth_texture = Texture::create_depth_texture(
-                &sys.device,
-                &sys.surface_cfg,
-                "Depth texture",
-                graphics.msaa_samples,
-            );
-
-            graphics.depth_texture_contour = Texture::create_depth_texture(
-                &sys.device,
-                &sys.surface_cfg,
-                "Depth texture contour",
-                1,
-            );
-            graphics.bind_group_contour = create_contour_bind_group(
-                &sys.device,
-                &graphics.layout_contour,
-                &graphics.depth_texture_contour.view,
-                &graphics.contour_uniform_buf,
-            );
-            graphics.bind_group_ssao = create_ssao_bind_group(
-                &sys.device,
-                &graphics.layout_ssao,
-                &graphics.depth_texture_contour.view,
-                &graphics.ssao_uniform_buf,
-            );
-
-            graphics.ssao_texture =
-                Texture::create_ssao_texture(&sys.device, &sys.surface_cfg, "SSAO texture");
-            graphics.bind_group_ssao_blur = create_ssao_blur_bind_group(
-                &sys.device,
-                &graphics.layout_ssao_blur,
-                &graphics.depth_texture_contour.view,
-                &graphics.ssao_uniform_buf,
-                &graphics.ssao_texture.view,
-            );
-
-            if let Some(outline) = &mut graphics.outline {
-                outline.resize(&sys.device, &sys.surface_cfg);
-            }
-
-            if let Some(t) = &mut graphics.msaa_texture {
-                *t = GraphicsState::create_msaa_texture(
-                    &sys.device,
-                    &sys.surface_cfg,
-                    graphics.msaa_samples,
-                );
-            }
+            graphics.refresh_render_targets(&sys.device);
 
             graphics.scene.camera.update_proj_mat();
 
