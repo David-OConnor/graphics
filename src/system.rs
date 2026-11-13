@@ -112,9 +112,15 @@ where
         let last_render_time = Instant::now();
         let dt = Duration::new(0, 0);
 
+        // Vulkan isn't native on Apple platforms; use Metal there.
+        #[cfg(target_vendor = "apple")]
+        let backends = Backends::METAL;
+        #[cfg(not(target_vendor = "apple"))]
+        let backends = Backends::VULKAN;
+
         // The instance is a handle to our GPU. Its main purpose is to create Adapters and Surfaces.
         let instance = Instance::new(InstanceDescriptor {
-            backends: Backends::VULKAN,
+            backends,
             ..InstanceDescriptor::new_without_display_handle()
         });
 
