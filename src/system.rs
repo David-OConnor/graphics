@@ -214,6 +214,7 @@ where
             vector_overlays: std::mem::take(&mut self.scene.vector_overlays),
             camera: self.scene.camera.clone(),
             lighting: self.scene.lighting.clone(),
+            floor_shadows: self.scene.floor_shadows.take(),
             input_settings: self.scene.input_settings.clone(),
             background_color: self.scene.background_color,
             window_title: self.scene.window_title.clone(),

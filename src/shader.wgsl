@@ -43,6 +43,17 @@ var<uniform> camera: Camera;
 // this is due to the dynamic-sized point light array.
 var<storage, read> lighting: Lighting;
 
+// The shadow mask pass binds its projection settings in place of the lighting buffer.
+// xyz is the point light; w is the world-space height of the floor.
+@group(1) @binding(1)
+var<uniform> shadow_projection: vec4<f32>;
+
+@group(2) @binding(0)
+var floor_shadow_masks: texture_2d_array<f32>;
+
+@group(2) @binding(1)
+var<uniform> floor_shadow_strength: f32;
+
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -93,19 +104,27 @@ fn fog_weight_band(distance_to_cam: f32) -> f32 {
     return 1.0 - exp(-camera.fog_density * shaped);
 }
 
-@vertex
-fn vs_main(
-    vertex_in: VertexIn,
-    instance: InstanceIn,
-) -> VertexOut {
+fn world_position(vertex_in: VertexIn, instance: InstanceIn) -> vec4<f32> {
     // The model matrix includes translation, rotation, and scale.
-    var model_mat = mat4x4<f32>(
+    let model_mat = mat4x4<f32>(
         instance.model_matrix_0,
         instance.model_matrix_1,
         instance.model_matrix_2,
         instance.model_matrix_3,
     );
 
+    return model_mat * vec4<f32>(vertex_in.position, 1.0);
+}
+
+fn vertex_color(vertex_in: VertexIn, instance: InstanceIn) -> vec4<f32> {
+    return select(vertex_in.color, instance.color, vertex_in.color.a == 0.0);
+}
+
+@vertex
+fn vs_main(
+    vertex_in: VertexIn,
+    instance: InstanceIn,
+) -> VertexOut {
     // The normal matrix includes rotation only.
     var normal_mat = mat3x3<f32>(
         instance.normal_matrix_0,
@@ -126,8 +145,7 @@ fn vs_main(
 //        world_normal,
 //    ));
 
-    // Pad the model position with 1., for use with the 4x4 transform mats.
-    var world_posit = model_mat * vec4<f32>(vertex_in.position, 1.0);
+    var world_posit = world_position(vertex_in, instance);
 
     // Depth-aware halo prepass: push vertices outward along world normals.
     // Combined with front-face culling and depth-only writes, this causes background
@@ -145,11 +163,7 @@ fn vs_main(
 //    result.tangent_light_position = tangent_matrix * light.position;
     result.normal = world_normal;
 
-    if (vertex_in.color.a == 0.0) {
-        result.color = instance.color;
-    } else {
-        result.color = vertex_in.color;
-    }
+    result.color = vertex_color(vertex_in, instance);
 
     result.shinyness = instance.shinyness;
     result.world_posit = world_posit.xyz;
@@ -191,6 +205,36 @@ fn fs_outline_mask(vertex: OutlineMaskOut) -> @location(0) vec4<f32> {
     return vertex.outline;
 }
 
+struct ShadowMaskOut {
+    @builtin(position) clip_posit: vec4<f32>,
+    @location(0) height_fraction: f32,
+    @location(1) opacity: f32,
+}
+
+@vertex
+fn vs_floor_shadow(vertex_in: VertexIn, instance: InstanceIn) -> ShadowMaskOut {
+    let world = world_position(vertex_in, instance).xyz;
+    let light = shadow_projection.xyz;
+    let floor_y = shadow_projection.w;
+    let t = (world.y - floor_y) / (light.y - floor_y);
+    let w = 1.0 - t;
+
+    // Intersect the ray from the light through this vertex with the floor. Keep the
+    // result homogeneous so the rasterizer can clip silhouettes that cross the light.
+    let on_floor = vec4<f32>(world.x - t * light.x, w * floor_y, world.z - t * light.z, w);
+    return ShadowMaskOut(camera.proj_view * on_floor, t, vertex_color(vertex_in, instance).a);
+}
+
+@fragment
+fn fs_floor_shadow(vertex: ShadowMaskOut) -> @location(0) f32 {
+    // A caster has to lie between the light and the receiving plane.
+    if vertex.height_fraction < 0.0 || vertex.height_fraction >= 1.0 {
+        discard;
+    }
+    // Max blending unions silhouettes without darkening overlaps between atoms and bonds.
+    return saturate(vertex.opacity);
+}
+
 // Unused
 //fn fxaa(uv: vec2<f32>) -> vec3<f32> {
 //    let color = textureSample(scene_texture, scene_sampler, uv).rgb;
@@ -199,85 +243,95 @@ fn fs_outline_mask(vertex: OutlineMaskOut) -> @location(0) vec4<f32> {
 //    return (color + color_left + color_right) / 3.0; // Simplified averaging
 //}
 
-/// Fragment shader, which is mostly lighting calculations.
+struct LightContribution {
+    diffuse: vec3<f32>,
+    specular: vec3<f32>,
+}
+
+fn surface_normal(vertex: VertexOut, front: bool) -> vec3<f32> {
+    let normal = normalize(vertex.normal);
+    // Transparent meshes are drawn on both sides.
+    return select(-normal, normal, front);
+}
+
+fn shade_light(
+    light: PointLight,
+    position: vec3<f32>,
+    normal: vec3<f32>,
+    view_dir: vec3<f32>,
+    shinyness: f32,
+) -> LightContribution {
+    let light_diff = position - light.position.xyz;
+    let light_dir = normalize(light_diff);
+    let dist = length(light_diff);
+    let dist_attenuation = 1.0 / (1.0 + 0.09 * dist + 0.032 * pow(dist, 2.0));
+    var diffuse_attenuation = max(dot(normal, -light_dir), 0.0);
+
+    if light.directional != 0u {
+        let angle_diff = acos(dot(-normalize(light.direction), normalize(position - camera.position.xyz)));
+        if angle_diff > light.fov / 2.0 {
+            diffuse_attenuation = 0.0;
+        }
+    }
+
+    let diffuse = light.diffuse_color.rgb * diffuse_attenuation * light.diffuse_intensity * dist_attenuation;
+    var specular = vec3<f32>(0.0);
+    if diffuse_attenuation > 0.0 {
+        let half_dir = normalize(view_dir - light_dir);
+        let fresnel = pow(1.0 - dot(view_dir, normal), 5.0);
+        let specular_coeff = pow(max(dot(normal, half_dir), 0.0), shinyness);
+        specular = fresnel * light.specular_color.rgb * specular_coeff * light.specular_intensity * dist_attenuation;
+    }
+    return LightContribution(diffuse, specular);
+}
+
 @fragment
-fn fs_main(
+fn fs_main(vertex: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    let normal = surface_normal(vertex, front);
+    let view_diff = camera.position.xyz - vertex.world_posit;
+    let view_dir = normalize(view_diff);
+    var light: LightContribution;
+    for (var i = 0; i < lighting.lights_len; i++) {
+        let direct = shade_light(lighting.point_lights[i], vertex.world_posit, normal, view_dir, vertex.shinyness);
+        light.diffuse += direct.diffuse;
+        light.specular += direct.specular;
+    }
+    return finish_surface(vertex, normal, view_diff, view_dir, light);
+}
+
+@fragment
+fn fs_floor(vertex: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    let normal = surface_normal(vertex, front);
+    let view_diff = camera.position.xyz - vertex.world_posit;
+    let view_dir = normalize(view_diff);
+    let pixel = vec2<i32>(vertex.clip_posit.xy);
+    let layers = i32(textureNumLayers(floor_shadow_masks));
+    var light: LightContribution;
+    for (var i = 0; i < lighting.lights_len; i++) {
+        let direct = shade_light(lighting.point_lights[i], vertex.world_posit, normal, view_dir, vertex.shinyness);
+        var visible = 1.0;
+        if i < layers {
+            let coverage = textureLoad(floor_shadow_masks, pixel, i, 0).r;
+            visible -= floor_shadow_strength * coverage;
+        }
+        light.diffuse += direct.diffuse * visible;
+        light.specular += direct.specular * visible;
+    }
+    return finish_surface(vertex, normal, view_diff, view_dir, light);
+}
+
+fn finish_surface(
     vertex: VertexOut,
-    @builtin(front_facing) front: bool,
-) -> @location(0) vec4<f32> {
-    // Always renormalise after interpolation
-    var normal = normalize(vertex.normal);
-
-    // If it’s a transparent surface's back face, flip the normal so it still points *out* of the surface
-    if (!front) {
-        normal = -normal;
-    }
-
-    // Ambient lighting
-    // todo: Don't multiply ambient for every fragment; do it on the CPU.
-    var ambient = lighting.ambient_color * lighting.ambient_intensity;
-
-    var view_diff = camera.position.xyz - vertex.world_posit.xyz;
-    var view_dir = normalize(view_diff);
-
-    // todo: Emmissive term?
-
-//    let tangent_normal = object_normal.xyz * 2.0 - 1.0;
-
-    // Initialize diffuse and specular components
-    // These values include color and intensity
-    var diffuse = vec4<f32>(0., 0., 0., 0.);
-    var specular = vec4<f32>(0., 0., 0., 0.);
-
-    for (var i=0; i < lighting.lights_len; i++) {
-        var light = lighting.point_lights[i];
-
-        // Direction from light to the vertex; we use this to calculate attentiation,
-        // and diffuse-lighting cosine loss.
-
-        var light_to_vert_diff =  vertex.world_posit.xyz - light.position.xyz;
-
-        var light_to_vert_dir = normalize(light_to_vert_diff);
-
-        let k1 = 0.09; // Linear attenuation term
-        let k2 = 0.032; // Quadratic attenuation term
-        var dist_attenuation = 1.0 / (1.0 + k1 * length(light_to_vert_diff) + k2 * pow(length(light_to_vert_diff), 2.0));
-
-
-        // Diffuse lighting. This is essentially cosine los.
-        var diffuse_attenuation = max(dot(normal, -light_to_vert_dir), 0.);
-
-        // For directional lights, don't attenuate further if the vertex is inside the light's
-        // FOV. If outside, gradually attentuate to 0.
-        if light.directional != 0u {
-            let light_dir = normalize(light.direction); // Ideally handled upstream.
-            // todo: This likely not handle opposite direction correctly.(?)
-            // e.g. the vector from the camera to the fragment.
-            let angle_diff = acos(dot(-light_dir, normalize(vertex.world_posit.xyz - camera.position.xyz)));
-            if (angle_diff > light.fov/2.) {
-                diffuse_attenuation = 0.0;
-            }
-        }
-
-        diffuse += light.diffuse_color * diffuse_attenuation * light.diffuse_intensity * dist_attenuation;
-
-        // Specular lighting.
-        var specular_this_light = vec4<f32>(0., 0., 0., 0.);
-
-        if (diffuse_attenuation > 0.0) {
-            var half_dir = normalize(view_dir - light_to_vert_dir);
-
-            // Fresnel Effect: Adjust specular based on view angle
-            var fresnel = pow(1.0 - dot(view_dir, normal), 5.0);
-            var specular_coeff = pow(max(dot(normal, half_dir), 0.), vertex.shinyness);
-            specular += fresnel * light.specular_color * specular_coeff * light.specular_intensity * dist_attenuation;
-        }
-    }
-
+    normal: vec3<f32>,
+    view_diff: vec3<f32>,
+    view_dir: vec3<f32>,
+    light: LightContribution,
+) -> vec4<f32> {
     // Modulated combine
+    let ambient = lighting.ambient_color.rgb * lighting.ambient_intensity;
     let base   = vertex.color.rgb;       // Albedo / base colour coming from the mesh
-    let litRGB = (ambient.rgb + diffuse.rgb) * base   // Lambert terms tinted
-               + specular.rgb;                        // Specular left un-tinted
+    let litRGB = (ambient + light.diffuse) * base   // Lambert terms tinted
+               + light.specular;                        // Specular left un-tinted
 
     var result = vec4<f32>(litRGB, vertex.color.a);
 

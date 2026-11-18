@@ -32,6 +32,7 @@ use winit::{
 use crate::{
     Camera, Handedness,
     camera::CAMERA_SIZE,
+    floor_shadows::{CasterDraws, FloorShadowPass},
     gauss::{CAM_BASIS_SIZE, CameraBasis, GAUSS_INST_LAYOUT, QUAD_VERTEX_LAYOUT, QUAD_VERTICES},
     gui::GuiState,
     input::{self, InputsCommanded},
@@ -142,6 +143,8 @@ pub(crate) struct GraphicsState {
     mesh_mappings: Vec<(i32, u32, u32)>,
     mesh_mappings_transparent: Vec<(i32, u32, u32)>,
     mesh_mappings_outline: Vec<(i32, u32, u32)>,
+    floor_casters: [CasterDraws; 2],
+    floor_shadow_pass: Option<FloorShadowPass>,
     pub window: Arc<Window>,
     /// World-space expansion (along normals) used in the halo prepass. 0 = disabled.
     pub halo_expansion: f32,
@@ -721,6 +724,8 @@ impl GraphicsState {
             mesh_mappings,
             mesh_mappings_transparent,
             mesh_mappings_outline,
+            floor_casters: Default::default(),
+            floor_shadow_pass: None,
             window,
             msaa_texture,
             halo_expansion: 0.,
@@ -1055,8 +1060,10 @@ impl GraphicsState {
         let mut mesh_mappings = Vec::with_capacity(n_meshes);
         let mut mesh_mappings_transparent = Vec::with_capacity(n_meshes);
         let mut mesh_mappings_outline = Vec::with_capacity(n_meshes);
+        let mut floor_casters: [CasterDraws; 2] = Default::default();
 
         let mut vertex_start_this_mesh = 0;
+        let mut index_start_this_mesh = 0;
 
         let mut instance_start_this_mesh = 0;
         let mut instance_start_this_mesh_transparent = 0;
@@ -1070,6 +1077,12 @@ impl GraphicsState {
 
         // Build mesh-based instances.
         for (i, mesh) in scene.meshes.iter().enumerate() {
+            let index_end = index_start_this_mesh + mesh.indices.len() as u32;
+            let caster_classes = scene
+                .floor_shadows
+                .as_ref()
+                .filter(|shadows| i != shadows.receiver_mesh && !mesh.indices.is_empty())
+                .map(|shadows| &shadows.caster_classes);
             let mut instance_count_this_mesh = 0;
             let mut instance_count_this_mesh_transparent = 0;
             let mut instance_count_this_mesh_outline = 0;
@@ -1107,6 +1120,14 @@ impl GraphicsState {
                     entity.buf_is_transparent = false;
                     i_opaque += 1;
                 }
+
+                if caster_classes.is_some_and(|classes| classes.contains(&entity.class)) {
+                    floor_casters[usize::from(entity.buf_is_transparent)].push(
+                        index_start_this_mesh..index_end,
+                        vertex_start_this_mesh,
+                        entity.buf_i.unwrap() as u32,
+                    );
+                }
             }
 
             mesh_mappings.push((
@@ -1128,6 +1149,7 @@ impl GraphicsState {
             ));
 
             vertex_start_this_mesh += mesh.vertices.len() as i32;
+            index_start_this_mesh = index_end;
 
             instance_start_this_mesh += instance_count_this_mesh;
             instance_start_this_mesh_transparent += instance_count_this_mesh_transparent;
@@ -1137,6 +1159,7 @@ impl GraphicsState {
         self.mesh_mappings = mesh_mappings;
         self.mesh_mappings_transparent = mesh_mappings_transparent;
         self.mesh_mappings_outline = mesh_mappings_outline;
+        self.floor_casters = floor_casters;
         self.outline_max_thickness = outline_max_thickness;
 
         // Build gaussian-based instances. (48 bytes per serialized GaussianInstance.)
@@ -1338,6 +1361,7 @@ impl GraphicsState {
     /// Recreate all MSAA-dependent resources after a sample-count change.
     /// Call this from the event loop (which also has access to GuiState for its renderer).
     pub(crate) fn apply_msaa_change(&mut self, device: &Device) {
+        self.floor_shadow_pass = None;
         let new_msaa = self.msaa_samples;
 
         self.render_target_state = None;
@@ -1438,6 +1462,7 @@ impl GraphicsState {
         encoder: &'a mut CommandEncoder,
         output_view: &TextureView,
         viewport: (f32, f32, f32, f32),
+        floor_receiver_mesh: Option<usize>,
     ) -> RenderPass<'a> {
         let (x, y, eff_width, eff_height) = viewport;
 
@@ -1517,23 +1542,29 @@ impl GraphicsState {
         // Make a render pass for opaque meshes, and transparent ones. We separate them to only
         // back-cull opaque ones.
         // We draw transparent meshes in two passes, for proper surface culling.
-        for (inst_buf, pipeline, mappings) in [
-            (&self.instance_buf, &self.pipeline_mesh, &self.mesh_mappings),
+        let shadow_receiver = floor_receiver_mesh.zip(self.floor_shadow_pass.as_ref());
+        for (inst_buf, pipeline, mappings, shadow_side) in [
+            (
+                &self.instance_buf,
+                &self.pipeline_mesh,
+                &self.mesh_mappings,
+                None,
+            ),
             // The order might matter here, i.e. running the back transparent pipeline before
             // the front transparent one.
             (
                 &self.instance_buf_transparent,
                 &self.pipeline_mesh_transparent_back,
                 &self.mesh_mappings_transparent,
+                Some(0),
             ),
             (
                 &self.instance_buf_transparent,
                 &self.pipeline_mesh_transparent,
                 &self.mesh_mappings_transparent,
+                Some(1),
             ),
-        ]
-        .into_iter()
-        {
+        ] {
             if inst_buf.size() == 0 {
                 continue;
             }
@@ -1556,11 +1587,22 @@ impl GraphicsState {
                     continue;
                 }
 
+                let shadowed_floor = shadow_receiver
+                    .filter(|(mesh, _)| *mesh == i)
+                    .zip(shadow_side);
+                if let Some(((_, shadow_pass), side)) = shadowed_floor {
+                    shadow_pass.bind_receiver(&mut rpass, side);
+                }
+
                 rpass.draw_indexed(
                     start_ind..start_ind + mesh.indices.len() as u32,
                     vertex_start_this_mesh,
                     instance_start_this_mesh..instance_start_this_mesh + instance_count_this_mesh,
                 );
+
+                if shadowed_floor.is_some() {
+                    rpass.set_pipeline(pipeline);
+                }
 
                 start_ind += mesh.indices.len() as u32;
             }
@@ -1737,11 +1779,14 @@ impl GraphicsState {
             drop(pre);
         }
 
+        let viewport = (vp_x, vp_y, vp_width, vp_height);
+        let floor_receiver_mesh = self.prepare_floor_shadows(device, queue, &mut encoder, viewport);
         if has_geometry {
             drop(self.setup_render_pass(
                 &mut encoder,
                 output_texture,
-                (vp_x, vp_y, vp_width, vp_height),
+                viewport,
+                floor_receiver_mesh,
             ));
         } else {
             drop(encoder.begin_render_pass(&RenderPassDescriptor {
@@ -1927,6 +1972,53 @@ impl GraphicsState {
         queue.present(surface_texture);
 
         (resize_required, request_redraw)
+    }
+
+    fn prepare_floor_shadows(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        encoder: &mut CommandEncoder,
+        viewport: (f32, f32, f32, f32),
+    ) -> Option<usize> {
+        let Some(floor) = self.scene.floor_shadows.as_ref().filter(|floor| {
+            floor.strength > 0.
+                && self.floor_casters.iter().any(|draws| !draws.is_empty())
+                && !self.scene.lighting.point_lights.is_empty()
+        }) else {
+            if let Some(shadows) = &mut self.floor_shadow_pass {
+                shadows.release_targets();
+            }
+            return None;
+        };
+
+        let shadows = self.floor_shadow_pass.get_or_insert_with(|| {
+            FloorShadowPass::new(
+                device,
+                &self.surface_cfg,
+                self.msaa_samples,
+                front_face_for(&self.scene.camera),
+                &self.shader_mesh,
+                &self.bind_groups.layout_cam,
+                &self.bind_groups.layout_lighting,
+                self.pipeline_cache.as_ref(),
+            )
+        });
+        shadows.render_masks(
+            device,
+            queue,
+            encoder,
+            &self.surface_cfg,
+            viewport,
+            floor,
+            &self.scene,
+            &self.bind_groups.cam,
+            &self.vertex_buf,
+            &self.index_buf,
+            [&self.instance_buf, &self.instance_buf_transparent],
+            &self.floor_casters,
+        );
+        Some(floor.receiver_mesh)
     }
 }
 

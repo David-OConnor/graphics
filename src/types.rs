@@ -433,6 +433,8 @@ pub struct Scene {
     pub vector_overlays: Vec<VectorOverlay>,
     pub camera: Camera,
     pub lighting: Lighting,
+    /// Optional shadows on a horizontal mesh, cast by selected entity classes.
+    pub floor_shadows: Option<crate::FloorShadows>,
     pub input_settings: InputSettings,
     pub background_color: (f32, f32, f32),
     pub window_title: String,
@@ -454,6 +456,7 @@ impl Default for Scene {
             vector_overlays: Vec::new(),
             camera: Default::default(),
             lighting: Default::default(),
+            floor_shadows: None,
             input_settings: Default::default(),
             // todo: Consider a separate window struct.
             background_color: (0.7, 0.7, 0.7),
